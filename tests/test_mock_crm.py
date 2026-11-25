@@ -55,3 +55,44 @@ def test_rejects_what_the_real_api_might_reject(body):
 def test_filters_by_zip():
     crm, _ = mock()
     assert [a["account_id"] for a in crm.list_accounts(zip="44000")] == ["A1"]
+
+
+
+@pytest.mark.parametrize("body", [
+    {},                              # nothing to update
+    {"billing_zip": 45103},          # not a string, e.g. a scraper that lost a leading zero
+    {"parent_id": ["x"]},
+    {"name": "  "},                  # blank name
+    {"duplicate_of_account": "A1"},  # points to the account itself
+])
+def test_rejects_bad_updates(body):
+    crm, _ = mock()
+    with pytest.raises(CrmError, match="422"):
+        crm.update_account("A1", body)
+
+
+def test_rejects_unknown_filters():
+    _, http = mock()
+    assert http.get("/api/v1/accounts", params={"zipp": "44000"}).status_code == 422
+
+
+def test_rejects_malformed_json():
+    _, http = mock()
+    r = http.patch("/api/v1/accounts/A1", content="{not json", headers={"Content-Type": "application/json"})
+    assert r.status_code == 422
+
+
+def test_writes_need_a_token_and_unknown_ids_are_404():
+    bare = TestClient(create_app({"accounts": parent_accounts() + [make_account()], "contacts": []}))
+    assert bare.post("/api/v1/accounts", json={"name": "X"}).status_code == 401
+    assert bare.patch("/api/v1/accounts/A1", json={"note": "n"}).status_code == 401
+    crm, _ = mock()
+    with pytest.raises(CrmError, match="404"):
+        crm.get_account("NOPE")
+
+
+def test_seed_is_not_mutated():
+    seed = {"accounts": parent_accounts() + [make_account()], "contacts": []}
+    crm = CrmClient(token="t", base="http://testserver/api/v1", session=TestClient(create_app(seed)))
+    crm.update_account("A1", {"note": "changed"})
+    assert seed["accounts"][-1]["note"] == ""
