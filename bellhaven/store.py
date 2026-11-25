@@ -185,6 +185,13 @@ def claim(conn, key: str) -> bool:
     return cur.rowcount == 1
 
 
+def reject(conn, key: str, comment: str | None = None) -> bool:
+    """Reject a pending or failed proposal. False if it was claimed or decided meanwhile."""
+    with conn:
+        cur = conn.execute("UPDATE proposals SET status='rejected', decided_at=?, comment=COALESCE(?, comment)"
+                           " WHERE key=? AND status IN ('pending', 'failed')", (_now(), comment, key))
+    return cur.rowcount == 1
+
 def log_call(conn, key: str, method: str, path: str, body: dict, response: dict) -> int:
     with conn:
         cur = conn.execute("INSERT INTO api_log (proposal_key, method, path, body, response, at) VALUES (?,?,?,?,?,?)",

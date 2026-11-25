@@ -124,3 +124,16 @@ def test_failed_batch_leaves_nothing_behind():
         store.add_proposals(conn, run, [good, broken])
     assert not conn.in_transaction
     assert conn.execute("SELECT COUNT(*) FROM proposals").fetchone()[0] == 0
+
+
+def test_reject_only_works_on_undecided_proposals():
+    conn = store.connect(":memory:")
+    run = store.start_run(conn)
+    busy, waiting = proposal(), proposal(account_id="A2")
+    store.add_proposals(conn, run, [busy, waiting])
+    assert store.claim(conn, busy.key)  # an apply is in progress in another tab
+    assert store.reject(conn, busy.key, "too late") is False
+    assert store.get(conn, busy.key)["status"] == "applying"
+    assert store.reject(conn, waiting.key, "not this one") is True
+    assert (store.get(conn, waiting.key)["status"], store.get(conn, waiting.key)["comment"]) == ("rejected",
+                                                                                                "not this one")

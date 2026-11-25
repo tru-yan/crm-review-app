@@ -34,8 +34,11 @@ def flat(d: dict, prefix: str = "") -> dict:
 
 def decide(conn, client, row, approve: bool, comment: str) -> None:
     if not approve:
-        store.set_status(conn, row["key"], "rejected", comment)
-        st.session_state.flash = ("info", f"Rejected: {row['title']}")
+        if store.reject(conn, row["key"], comment):
+            st.session_state.flash = ("info", f"Rejected: {row['title']}")
+        else:
+            now = store.get(conn, row["key"])["status"]
+            st.session_state.flash = ("warning", f"Not rejected: '{row['title']}' is {now} now.")
         return
     try:
         result = apply_proposal(conn, client, row)  # it claims the proposal first, so a second click can't write twice
@@ -51,7 +54,12 @@ def decide(conn, client, row, approve: bool, comment: str) -> None:
         store.set_status(conn, row["key"], "failed", comment, {"error": str(e)})
         st.session_state.flash = ("error", f"Write failed: {e}")
         return
-    store.set_status(conn, row["key"], "applied", comment, result)
+    try:
+        store.set_status(conn, row["key"], "applied", comment, result)
+    except Exception as e:  # the CRM write succeeded; only recording it as applied failed
+        st.session_state.flash = ("error", f"Written to the CRM ({result}) but not recorded as applied: {e}. "
+                                           "The API log and change log have the write.")
+        return
     st.session_state.flash = ("success", f"Written to CRM: {row['title']} -> {result}")
 
 
@@ -77,7 +85,13 @@ def show(conn, client, row) -> None:
         right.markdown("**CRM now**")
         right.json(ev.get("crm") or {"-": "no CRM account"}, expanded=False)
         if "signals" in ev:
-            st.caption(f"Match score {ev['score']}: " + ", ".join(f"{k} +{v}" for k, v in ev["signals"].items()))
+            st.caption(f"Match score {ev.get('score')}: " + ", ".join(f"{k} +{v}" for k, v in ev["signals"].items()))
+        if row["status"] == "failed" and row["result"]:
+            st.error(f"Last attempt failed at {row['decided_at']}: {row['result']}")
+        if row["status"] == "applying":
+            st.warning("Being applied right now, or an earlier apply was interrupted. If it stays here, check this "
+                       "account's change log; re-running the pipeline puts it back in the queue if the change "
+                       "didn't land.")
         if row["status"] in ("pending", "failed"):
             comment = st.text_input("Reviewer comment", key=f"comment-{row['key']}")
             approve_col, reject_col = st.columns(2)
