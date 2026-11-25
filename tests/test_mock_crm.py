@@ -1,0 +1,57 @@
+import pytest
+from fastapi.testclient import TestClient
+
+from bellhaven.crm import CrmClient, CrmError
+from mock_crm.server import create_app
+from tests.factories import BH, HARBORVIEW, make_account, parent_accounts
+
+
+def mock(extra_accounts=0):
+    accounts = parent_accounts() + [make_account()] + [
+        make_account(account_id=f"X{i}", name=f"Other {i}", parent_id=HARBORVIEW) for i in range(extra_accounts)]
+    contacts = [{"contact_id": "C1", "account_id": "A1", "name": "Pat Admin", "title": "Administrator",
+                 "email": "", "phone": "", "is_active": True}]
+    http = TestClient(create_app({"accounts": accounts, "contacts": contacts}))
+    return CrmClient(token="test", base="http://testserver/api/v1", session=http), http
+
+
+def test_lists_page_through_all_accounts():
+    crm, _ = mock(extra_accounts=60)
+    assert len(crm.list_accounts()) == 4 + 1 + 60
+    assert [c["name"] for c in crm.list_contacts()] == ["Pat Admin"]
+
+
+def test_requires_a_token():
+    # a fresh client: CrmClient adds the token to the session it is given
+    bare = TestClient(create_app({"accounts": parent_accounts(), "contacts": []}))
+    assert bare.get("/api/v1/accounts").status_code == 401
+
+
+def test_create_marks_account_as_candidate_created_and_fills_parent_name():
+    crm, _ = mock()
+    created = crm.create_account({"name": "Bellhaven of Batavia", "parent_id": BH, "billing_zip": "45103"})
+    assert created["created_by_candidate"] is True
+    assert created["parent_name"] == "Bellhaven Senior Living (Parent Account)"
+    assert crm.get_account(created["account_id"])["name"] == "Bellhaven of Batavia"
+
+
+def test_reparenting_updates_parent_name():
+    crm, _ = mock()
+    assert crm.update_account("A1", {"parent_id": HARBORVIEW})["parent_name"] == "Harborview Care Group (Parent Account)"
+
+
+@pytest.mark.parametrize("body", [
+    {"status": "Closed"},                # not Active / Inactive / Needs Review
+    {"lifetime_revenue": 0},             # billing fields are read-only
+    {"parent_id": "NOPE"},               # references must point to real accounts
+    {"duplicate_of_account": "NOPE"},
+])
+def test_rejects_what_the_real_api_might_reject(body):
+    crm, _ = mock()
+    with pytest.raises(CrmError, match="422"):
+        crm.update_account("A1", body)
+
+
+def test_filters_by_zip():
+    crm, _ = mock()
+    assert [a["account_id"] for a in crm.list_accounts(zip="44000")] == ["A1"]
