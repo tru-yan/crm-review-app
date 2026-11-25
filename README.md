@@ -13,6 +13,8 @@ Copy-Item .env.example .env   # then put your token in .env
 
 ## Use
 
+Run these from the repo root, with the virtual environment active:
+
 ```powershell
 python -m bellhaven.pipeline      # daily job: scrape, read CRM, store proposals (never writes to the CRM)
 streamlit run review_app.py       # review queue: approve writes to the CRM, reject records the decision
@@ -27,10 +29,17 @@ python -c "from bellhaven import store; from bellhaven.config import DB_PATH; [p
 
 ## Testing without touching the graded CRM
 
-`mock_crm/` is a local copy of the CRM API, filled from a read-only snapshot (`python -m mock_crm.snapshot`). Point everything at it with two settings:
+`mock_crm/` is a local copy of the CRM API, filled from a read-only snapshot of the live sandbox (`python -m mock_crm.snapshot`, which only reads and refuses to overwrite an existing snapshot). The snapshot must exist before the mock starts.
+
+In one terminal, start the mock (it keeps running; restart it to reset it):
 
 ```powershell
 $env:BH_MOCK_SEED = "data\snapshot\crm.json"; uvicorn mock_crm.server:build --factory --port 8001
+```
+
+In a second terminal, point the pipeline and the app at it with a separate database:
+
+```powershell
 $env:BH_API_BASE = "http://localhost:8001/api/v1"; $env:BH_DB_PATH = "data\test.db"
 ```
 
@@ -38,8 +47,15 @@ Each database is tied to the CRM it was first used with, so test decisions can't
 
 ## Schedule
 
-`deploy/crontab.txt` runs the pipeline daily at 06:00. Re-runs are safe: decided proposals are never proposed again, and undecided ones are refreshed. On Windows, the equivalent is:
+`deploy/crontab.txt` runs the pipeline daily at 06:00. Edit the path in it to your checkout; the token comes from the `.env` file there. Re-runs are safe:
+
+- rejected proposals are never proposed again
+- pending, failed and superseded ones are refreshed with current data
+- undecided ones that a run no longer produces are marked superseded
+- an applied one comes back only if the CRM has changed back, so the fix is needed again
+
+On Windows, the equivalent is the command below (adjust the path):
 
 ```powershell
-schtasks /Create /SC DAILY /ST 06:00 /TN "Bellhaven pipeline" /TR "cmd /c cd /d C:\Users\463995\rt_pg\crm && .venv\Scripts\python.exe -m bellhaven.pipeline"
+schtasks /Create /SC DAILY /ST 06:00 /TN "Bellhaven pipeline" /TR "cmd /c cd /d C:\Users\463995\rt_pg\crm && (if not exist logs mkdir logs) && .venv\Scripts\python.exe -m bellhaven.pipeline >> logs\pipeline.log 2>&1"
 ```
