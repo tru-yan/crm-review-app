@@ -1,8 +1,11 @@
 """Approve or reject one proposal and record the outcome. apply.apply_proposal does the CRM writing."""
+import logging
 from dataclasses import dataclass
 
 from .. import store
 from ..apply import AlreadyHandled, StaleProposal, apply_proposal
+
+log = logging.getLogger(__name__)
 
 APPLIED = "applied"                         # written; the CRM's response is stored on the proposal
 ALREADY_APPLIED = "already_applied"         # the CRM already had the change (an earlier response was lost)
@@ -12,6 +15,7 @@ ALREADY_HANDLED = "already_handled"         # decided already, or another click 
 REJECTED = "rejected"
 NEEDS_CONFIRMATION = "needs_confirmation"   # live sandbox, not confirmed yet: nothing written
 UNRECORDED = "unrecorded"                   # written, but saving the decision failed
+ERROR = "error"                             # the database failed before or while saving: see the server output
 
 
 @dataclass(frozen=True)
@@ -22,21 +26,29 @@ class Outcome:
     result: dict | None = None
 
 
-def _record_failure(conn, key: str, comment: str | None, result: dict) -> None:
+def _record_failure(conn, key: str, comment: str | None, result: dict) -> bool:
+    """Store a failed attempt on the proposal. False if even that failed: the status then stays 'applying'."""
     try:
         store.set_status(conn, key, "failed", comment, result)
-    except Exception:  # the outcome still reaches the reviewer; the API log has any write attempt
-        pass
+        return True
+    except Exception:
+        log.exception("could not record the failed attempt on proposal %s", key)
+        return False
 
 
-def approve(conn, client, key: str, comment: str | None = None, confirmed: bool = False,
-            live: bool = False) -> Outcome:
-    """Write one proposal to the CRM. Never raises: every failure becomes an outcome, and is stored on the proposal.
+def approve(conn, client, key: str, comment: str | None = None, *, live: bool, confirmed: bool = False) -> Outcome:
+    """Write one proposal to the CRM. Never raises: every failure becomes an outcome, and is stored on the
+    proposal when the database allows.
 
-    On the live sandbox nothing is written until the reviewer has confirmed (confirmed=True).
+    live is required and keyword-only, so it can't be swapped with confirmed by mistake. On the live sandbox
+    nothing is written until the reviewer has confirmed (confirmed=True).
     """
     comment = comment or None
-    row = store.get(conn, key)
+    try:
+        row = store.get(conn, key)
+    except Exception as e:
+        log.exception("could not read proposal %s", key)
+        return Outcome(ERROR, key, f"{type(e).__name__}: {e}")
     if row is None:
         return Outcome(ALREADY_HANDLED, key, "There is no such proposal.")
     if row["status"] not in store.UNDECIDED:
@@ -48,23 +60,29 @@ def approve(conn, client, key: str, comment: str | None = None, confirmed: bool 
     except AlreadyHandled as e:
         return Outcome(ALREADY_HANDLED, key, str(e))
     except StaleProposal as e:
-        _record_failure(conn, key, comment, {"stale": str(e)})
-        return Outcome(STALE, key, str(e))
+        recorded = _record_failure(conn, key, comment, {"stale": str(e)})
+        return Outcome(STALE if recorded else ERROR, key, str(e))
     except Exception as e:  # any API or unexpected error: keep it on the proposal for the reviewer
         message = f"{type(e).__name__}: {e}"
-        _record_failure(conn, key, comment, {"error": message})
-        return Outcome(FAILED, key, message)
+        log.warning("approving proposal %s failed: %s", key, message)
+        recorded = _record_failure(conn, key, comment, {"error": message})
+        return Outcome(FAILED if recorded else ERROR, key, message)
     try:
         store.set_status(conn, key, "applied", comment, result)
     except Exception as e:  # the CRM write succeeded; only recording it failed
+        log.exception("proposal %s was written to the CRM but not recorded as applied; result: %s", key, result)
         return Outcome(UNRECORDED, key, f"{type(e).__name__}: {e}", result)
     return Outcome(ALREADY_APPLIED if result.get("already_applied") else APPLIED, key, "", result)
 
 
 def reject(conn, key: str, comment: str | None = None) -> Outcome:
-    """Reject a pending or failed proposal. It is never proposed again."""
-    if store.reject(conn, key, comment or None):
-        return Outcome(REJECTED, key)
-    row = store.get(conn, key)
+    """Reject a pending or failed proposal. It is never proposed again. Never raises."""
+    try:
+        if store.reject(conn, key, comment or None):
+            return Outcome(REJECTED, key)
+        row = store.get(conn, key)
+    except Exception as e:
+        log.exception("could not reject proposal %s", key)
+        return Outcome(ERROR, key, f"{type(e).__name__}: {e}")
     status = row["status"] if row else "missing"
     return Outcome(ALREADY_HANDLED, key, f"Not rejected: it is {status} now.")

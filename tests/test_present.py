@@ -205,3 +205,9 @@ def test_banners_need_the_matching_stored_status():
     # reopened by a pipeline run since: an old link must not announce it as written or stale
     assert present.banner(ps["update"], "applied", names) is None
     assert present.banner(ps["update"], "stale", names) is None
+
+
+def test_an_error_banner_shows_whatever_the_status():
+    ps, names = queue()
+    for status in ("pending", "applying"):
+        assert present.banner(ps["update"] | {"status": status}, "error", names)["title"] == "Not saved"

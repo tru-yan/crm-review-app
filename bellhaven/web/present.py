@@ -18,7 +18,8 @@ FIELD_LABELS = {"name": "Name", "parent_id": "Parent", "billing_street": "Street
                 "chow_current_account": "CHOW current account"}
 SHORT_FIELDS = ("billing_zip", "billing_state", "status")  # summaries show their old value too: "Zip 45626 → 45662"
 ACCOUNT_ID_FIELDS = ("duplicate_of_account", "chow_current_account")
-BANNER_OUTCOMES = ("applied", "already_applied", "stale", "failed", "already_handled", "rejected", "unrecorded")
+BANNER_OUTCOMES = ("applied", "already_applied", "stale", "failed", "already_handled", "rejected", "unrecorded",
+                   "error")
 APPLYING_HINT = ("It is being applied right now, or an earlier apply was interrupted. If it stays like this, check "
                  f"its change log: a pipeline run started {STUCK_MINUTES} or more minutes from now puts it back in "
                  "the queue if the change didn't land.")
@@ -315,6 +316,10 @@ def banner(p, outcome: str, names: dict) -> dict | None:
         return b | {"tone": "error", "title": "Failed", "text": result.get("error") or "", "retry": True}
     if outcome == "rejected":
         return b | {"tone": "info", "title": "Rejected", "text": ""}
+    if outcome == "error":
+        return b | {"tone": "error", "title": "Not saved",
+                    "text": "The database failed while handling this decision. The server output has the error; "
+                            "anything written to the CRM is in the change history."}
     if outcome == "unrecorded":
         return b | {"tone": "error", "title": "Written, but not recorded",
                     "text": "The CRM write went through, but saving the decision failed. The API log and change "

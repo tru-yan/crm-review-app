@@ -12,7 +12,7 @@ def main() -> None:
     rows = store.list_proposals(conn, "pending")
     problems = []
     for row in rows:
-        outcome = review.approve(conn, crm, row["key"], "rehearsal")  # the same path as the Approve button
+        outcome = review.approve(conn, crm, row["key"], "rehearsal", live=not USING_MOCK)  # as the Approve button
         if outcome.kind not in (review.APPLIED, review.ALREADY_APPLIED):
             problems.append(f"{row['title']}: {outcome.kind} {outcome.message}")
     print(f"Applied {len(rows) - len(problems)} of {len(rows)} proposals to the mock at {API_BASE}")
