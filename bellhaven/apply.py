@@ -63,6 +63,15 @@ def _check_rules(kind: str, current: dict) -> None:
             "actual": {f: current.get(f) for f in ("duplicate_of_account", "chow_current_account")}}})
 
 
+def _check_survivor(client, survivor_id: str) -> None:
+    """A duplicate may only point at a live account: Active, and not itself a duplicate or a change of ownership."""
+    survivor = _read(client, survivor_id)
+    if survivor.get("status") != "Active" or already_resolved(survivor):
+        raise StaleProposal({"survivor": {
+            "expected": f"{survivor_id} Active, not a duplicate and no change of ownership",
+            "actual": {f: survivor.get(f) for f in ("status", "duplicate_of_account", "chow_current_account")}}})
+
+
 def _find_created(conn, client, key: str, payload: dict) -> dict | None:
     """The account this proposal already created, if any: from our own API log first, then a strict search."""
     for r in conn.execute("SELECT response FROM api_log WHERE proposal_key=? AND method='POST' ORDER BY id", (key,)):
@@ -130,6 +139,8 @@ def apply_proposal(conn, client, row) -> dict:
     if drift:
         raise StaleProposal(drift)
     _check_rules(kind, current)
+    if kind == "duplicate":
+        _check_survivor(client, changes["duplicate_of_account"])
 
     if kind == "chow":
         new = _create_once(conn, client, key, changes["new_account"])
@@ -138,7 +149,8 @@ def apply_proposal(conn, client, row) -> dict:
             old = _patch(conn, client, key, current, link)
         except CrmError as e:
             raise CrmError(f"created {new['account_id']} but could not link the old account to it ({e}). "
-                           "Retry: the new account will be reused, not created again.") from e
+                           "Retry it now, before the next pipeline run: the new account will be reused, "
+                           "not created again.") from e
         return {"created": new["account_id"], "old_account": account_id,
                 "mismatches": {"new_account": _mismatches(changes["new_account"], new),
                                "link": _mismatches(link, old)}}

@@ -68,6 +68,7 @@ FROM change_log c JOIN proposals p ON p.key = c.proposal_key
 ORDER BY c.id;
 """
 UNDECIDED = ("pending", "failed")
+STUCK_MINUTES = 10  # a proposal still "applying" this long before a run started is treated as stuck
 
 
 _last = datetime.min.replace(tzinfo=timezone.utc)
@@ -79,6 +80,10 @@ def _now() -> str:
     global _last
     _last = max(datetime.now(timezone.utc), _last + timedelta(microseconds=1))
     return _last.isoformat(timespec="microseconds")
+
+
+def _minus_minutes(timestamp: str, minutes: int) -> str:
+    return (datetime.fromisoformat(timestamp) - timedelta(minutes=minutes)).isoformat(timespec="microseconds")
 
 
 def connect(path, crm_base: str | None = None) -> sqlite3.Connection:
@@ -121,12 +126,15 @@ def add_proposals(conn, run_id: int, proposals) -> tuple[int, int]:
     An applied (or stuck applying) one that is produced again also goes back to pending: after a correct apply
     the next run no longer produces it, so seeing it again means the CRM changed back. That only counts for
     decisions made before this run started, so an approval made while this run was reading the CRM is kept.
+    A proposal still "applying" is reopened only if it was claimed STUCK_MINUTES before the run started, so an
+    apply that is still writing can never be reopened and approved a second time.
     The status checks are part of each UPDATE, so a decision the review app makes meanwhile is never overwritten.
     """
     new = known = 0
     with conn:
         run = conn.execute("SELECT started_at FROM runs WHERE id=?", (run_id,)).fetchone()
         started_at = run["started_at"] if run else ""
+        stuck_before = _minus_minutes(started_at, STUCK_MINUTES) if started_at else ""
         for p in proposals:
             values = (json.dumps(p.changes), json.dumps(p.before), json.dumps(p.evidence), p.confidence, run_id)
             if conn.execute("SELECT 1 FROM proposals WHERE key=?", (p.key,)).fetchone() is None:
@@ -140,8 +148,9 @@ def add_proposals(conn, run_id: int, proposals) -> tuple[int, int]:
             conn.execute(
                 "UPDATE proposals SET changes=?, before=?, evidence=?, confidence=?, run_id=?, status='pending'"
                 " WHERE key=? AND (status IN ('pending', 'failed', 'superseded')"
-                " OR (status IN ('applied', 'applying') AND decided_at < ?))",
-                (*values, p.key, started_at))
+                " OR (status = 'applied' AND decided_at < ?)"
+                " OR (status = 'applying' AND decided_at < ?))",
+                (*values, p.key, started_at, stuck_before))
     return new, known
 
 
@@ -153,7 +162,10 @@ def supersede_missing(conn, current_keys) -> int:
     """
     keys = set(current_keys)
     with conn:
-        stale = [r["key"] for r in conn.execute("SELECT key FROM proposals WHERE status IN ('pending', 'failed')")
+        # a failed proposal that logged a write stays failed: the write may have landed, and a retry records it
+        stale = [r["key"] for r in conn.execute(
+                     "SELECT key FROM proposals p WHERE status = 'pending' OR (status = 'failed' AND NOT EXISTS"
+                     " (SELECT 1 FROM api_log a WHERE a.proposal_key = p.key))")
                  if r["key"] not in keys]
         conn.executemany("UPDATE proposals SET status='superseded', decided_at=?"
                          " WHERE key=? AND status IN ('pending', 'failed')", [(_now(), k) for k in stale])
@@ -191,6 +203,7 @@ def reject(conn, key: str, comment: str | None = None) -> bool:
         cur = conn.execute("UPDATE proposals SET status='rejected', decided_at=?, comment=COALESCE(?, comment)"
                            " WHERE key=? AND status IN ('pending', 'failed')", (_now(), comment, key))
     return cur.rowcount == 1
+
 
 def log_call(conn, key: str, method: str, path: str, body: dict, response: dict) -> int:
     with conn:

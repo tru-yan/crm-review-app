@@ -185,3 +185,13 @@ def test_apply_uses_the_latest_stored_proposal_not_the_one_the_page_loaded():
     store.add_proposals(conn, store.start_run(conn), [p])  # ...and the next run refreshed the proposal
     apply_proposal(conn, crm, row)  # the page still holds the old row
     assert crm.accounts["A1"]["note"].startswith("edited by a rep | ")
+
+
+def test_duplicate_is_refused_if_its_survivor_is_no_longer_live():
+    crm = FakeCrm(parent_accounts() + [make_account(account_id="A1", phone="(330) 383-5991"), make_account(account_id="A2")])
+    conn, row = setup_with(crm, [make_location()])
+    assert row["kind"] == "duplicate" and json.loads(row["changes"])["duplicate_of_account"] == "A2"
+    crm.accounts["A2"]["status"] = "Inactive"  # the survivor was retired meanwhile
+    with pytest.raises(StaleProposal, match="survivor"):
+        apply_proposal(conn, crm, row)
+    assert crm.writes == []

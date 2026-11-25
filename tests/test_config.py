@@ -23,3 +23,11 @@ def test_graded_crm_is_recognised_however_written():
     assert config.is_graded_crm("https://analyst-assessment-production.up.railway.app/api/v1")
     assert config.is_graded_crm("HTTPS://Analyst-Assessment-Production.up.railway.app/api/v1/")
     assert not config.is_graded_crm("http://localhost:8001/api/v1")
+
+
+def test_only_local_hosts_count_as_the_mock():
+    assert config.is_mock_crm("http://localhost:8001/api/v1")
+    assert config.is_mock_crm("http://127.0.0.1:8001/api/v1")
+    assert not config.is_mock_crm("https://analyst-assessment-production.up.railway.app./api/v1")
+    assert not config.is_mock_crm("https://example.com/api/v1")
+    assert config.is_graded_crm("https://analyst-assessment-production.up.railway.app./api/v1")

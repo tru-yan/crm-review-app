@@ -37,10 +37,18 @@ GRADED_HOST = "analyst-assessment-production.up.railway.app"
 
 def is_graded_crm(api_base: str) -> bool:
     """True when api_base points at the graded sandbox, however the URL is written."""
-    return (urlsplit(api_base).hostname or "") == GRADED_HOST
+    return (urlsplit(api_base).hostname or "").rstrip(".") == GRADED_HOST
 
 
-USING_MOCK = not is_graded_crm(API_BASE)
+MOCK_HOSTS = {"localhost", "127.0.0.1", "::1", "testserver"}
+
+
+def is_mock_crm(api_base: str) -> bool:
+    """True only for a local mock. Anything else counts as live, so a typo can never unlock mock-only tools."""
+    return (urlsplit(api_base).hostname or "") in MOCK_HOSTS
+
+
+USING_MOCK = is_mock_crm(API_BASE)
 DB_PATH = Path(os.environ.get("BH_DB_PATH", ROOT / "data" / "state.db"))
 BELLHAVEN_PARENT_NAME = "Bellhaven Senior Living (Parent Account)"
 # Decision #1: status for a Bellhaven account that is gone from the website and has no other copy.

@@ -241,7 +241,11 @@ def build_proposals(locations, accounts, contacts, today: str) -> list[Proposal]
             continue
         survivor, why = choose_survivor(strong, bh)
         group = _survivor_proposals(loc, survivor, bh, today)
-        group += [_duplicate(loc, m, survivor, why, today) for m in strong if m is not survivor]
+        chow_pending = any(p.kind == "chow" for p in group)
+        # an account this tool created for a change of ownership that isn't linked yet is that CHOW's new account,
+        # not a duplicate: retrying the CHOW reuses it
+        group += [_duplicate(loc, m, survivor, why, today) for m in strong
+                  if m is not survivor and not (chow_pending and m.account.get("created_by_candidate"))]
         if len(group) > 1 and any(p.kind == "chow" for p in group):
             for p in group:
                 p.confidence = "low"

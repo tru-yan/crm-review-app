@@ -6,3 +6,4 @@ data/
 logs/
 image (*).png
 *.docx
+.claude/

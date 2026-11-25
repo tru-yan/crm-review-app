@@ -137,3 +137,34 @@ def test_reject_only_works_on_undecided_proposals():
     assert store.reject(conn, waiting.key, "not this one") is True
     assert (store.get(conn, waiting.key)["status"], store.get(conn, waiting.key)["comment"]) == ("rejected",
                                                                                                 "not this one")
+
+
+def test_an_apply_still_in_flight_is_not_reopened():
+    conn = store.connect(":memory:")
+    p = proposal()
+    store.add_proposals(conn, store.start_run(conn), [p])
+    assert store.claim(conn, p.key)  # Approve was clicked...
+    store.add_proposals(conn, store.start_run(conn), [p])  # ...and a pipeline run starts while it is writing
+    assert store.get(conn, p.key)["status"] == "applying"
+
+
+def test_a_long_stuck_apply_is_reopened():
+    conn = store.connect(":memory:")
+    p = proposal()
+    store.add_proposals(conn, store.start_run(conn), [p])
+    store.claim(conn, p.key)
+    with conn:
+        conn.execute("UPDATE proposals SET decided_at='2000-01-01T00:00:00.000000+00:00' WHERE key=?", (p.key,))
+    store.add_proposals(conn, store.start_run(conn), [p])
+    assert store.get(conn, p.key)["status"] == "pending"
+
+
+def test_failed_proposal_with_a_logged_write_is_not_superseded():
+    conn = store.connect(":memory:")
+    p = proposal()
+    store.add_proposals(conn, store.start_run(conn), [p])
+    store.claim(conn, p.key)
+    store.log_call(conn, p.key, "PATCH", "/accounts/A1", {"name": "X"}, {"error": "timed out"})
+    store.set_status(conn, p.key, "failed")
+    assert store.supersede_missing(conn, []) == 0
+    assert store.get(conn, p.key)["status"] == "failed"

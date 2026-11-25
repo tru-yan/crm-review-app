@@ -127,3 +127,10 @@ def test_weak_match_next_to_a_strong_one_is_not_hidden():
                          phone="(614) 555-0900")
     [p] = run([make_location()], [make_account(), other], [admin("A2")])
     assert p.kind == "not_on_website" and p.account_id == "A2"
+
+
+def test_unlinked_chow_account_is_not_proposed_as_a_duplicate():
+    # a CHOW whose link failed: its new account exists, but the old one isn't linked to it yet
+    old = make_account(account_id="A1", parent_id=CEDAR, lifetime_revenue=84000, outstanding_ar=12400)
+    new = make_account(account_id="NEW1", created_by_candidate=True)
+    assert [p.kind for p in run([make_location()], [old, new])] == ["chow"]
