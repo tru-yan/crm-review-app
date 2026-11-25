@@ -144,3 +144,64 @@ def test_banners_are_read_from_the_stored_result():
     busy = present.banner(ps["update"] | {"status": "applying"}, "already_handled", names)
     assert busy["text"].startswith("It is applying now")
     assert present.banner(ps["update"], "made-up", names) is None
+
+
+def test_newer_evidence_wins_for_names():
+    ps, _ = queue()
+    crm = ps["update"]["evidence"]["crm"] | {"account_id": "A3", "name": "Old Owosso Name"}
+    old = ps["update"] | {"run_id": 1, "evidence": ps["update"]["evidence"] | {"crm": crm}}
+    fresh = ps["duplicate"] | {"run_id": 2}
+    assert present.account_names([fresh, old])["A3"] == "Bellhaven of Owosso"
+    unnamed = fresh | {"evidence": fresh["evidence"] | {"survivor": {"account_id": "A9", "name": None}}}
+    assert "A9" not in present.account_names([unnamed])
+
+
+def test_old_duplicates_without_a_survivor_fall_back_to_the_id():
+    ps, _ = queue()
+    old = ps["duplicate"] | {"evidence": {k: v for k, v in ps["duplicate"]["evidence"].items() if k != "survivor"}}
+    assert present.summary(old, present.account_names([old])) == "Duplicate of A3"
+
+
+def test_money_and_unreadable_amounts():
+    amounts = (84000, 84000.5, None, "", -500)
+    assert [present.money(v) for v in amounts] == ["$84,000", "$84,000.50", "$0", "$0", "-$500"]
+    assert present.money("abc") == "abc"
+    ps, names = queue()
+    crm = ps["chow"]["evidence"]["crm"] | {"outstanding_ar": "abc"}
+    odd = ps["chow"] | {"evidence": ps["chow"]["evidence"] | {"crm": crm}}
+    ar = {c["label"]: c for c in present.side_by_side(odd, names)["crm"]}["Outstanding AR"]
+    assert (ar["value"], ar["alert"]) == ("abc", True)  # unreadable billing data counts as money involved
+
+
+def test_state_case_is_not_a_difference():
+    ps, names = queue()
+    crm = ps["update"]["evidence"]["crm"] | {"billing_state": "oh "}
+    p = ps["update"] | {"evidence": ps["update"]["evidence"] | {"crm": crm}}
+    assert {c["label"]: c["differs"] for c in present.side_by_side(p, names)["crm"]}["City / State / Zip"] is False
+
+
+def test_sop_box_for_a_direct_reparent():
+    p = update({"parent_id": BH, "note": "n"}, {"parent_id": CEDAR, "lifetime_revenue": 47000, "outstanding_ar": 0})
+    p["evidence"] = {"reasons": [], "sop": {"lifetime_revenue": 47000, "outstanding_ar": 0,
+                                            "preserve_old_account": False}}
+    assert present.sop(p)["text"] == "Lifetime revenue $47,000, outstanding AR $0: re-parenting allowed"
+
+
+def test_chow_mismatches_name_the_account():
+    result = {"created": "NEW1", "old_account": "A2",
+              "mismatches": {"new_account": {"phone": {"sent": "(614) 555-0100", "returned": "6145550100"}},
+                             "link": {"chow_current_account": {"sent": "NEW1", "returned": None}}}}
+    assert present.mismatches(result) == ["New account: Phone sent '(614) 555-0100', the CRM stored '6145550100'",
+                                          "Old account: CHOW current account sent 'NEW1', the CRM stored None"]
+
+
+def test_banners_need_the_matching_stored_status():
+    ps, names = queue()
+    again = ps["update"] | {"status": "applied", "result": {"updated": "A1", "already_applied": True, "mismatches": {}}}
+    assert present.banner(again, "already_applied", names)["title"] == "Already written"
+    assert present.banner(ps["duplicate"] | {"status": "rejected"}, "rejected", names)["tone"] == "info"
+    assert present.banner(ps["update"] | {"status": "applying"}, "unrecorded", names)["title"] == (
+        "Written, but not recorded")
+    # reopened by a pipeline run since: an old link must not announce it as written or stale
+    assert present.banner(ps["update"], "applied", names) is None
+    assert present.banner(ps["update"], "stale", names) is None

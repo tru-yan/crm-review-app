@@ -6,6 +6,7 @@ from datetime import datetime
 from ..config import BELLHAVEN_PARENT_NAME
 from ..normalize import crm_care_types, norm_phone, norm_street, same_text, zip5
 from ..sop import amount
+from ..store import STUCK_MINUTES
 
 KIND_LABELS = {"update": "Update", "chow": "Ownership", "create": "New account", "duplicate": "Duplicate",
                "not_on_website": "Not on site"}
@@ -19,8 +20,12 @@ SHORT_FIELDS = ("billing_zip", "billing_state", "status")  # summaries show thei
 ACCOUNT_ID_FIELDS = ("duplicate_of_account", "chow_current_account")
 BANNER_OUTCOMES = ("applied", "already_applied", "stale", "failed", "already_handled", "rejected", "unrecorded")
 APPLYING_HINT = ("It is being applied right now, or an earlier apply was interrupted. If it stays like this, check "
-                 "its change log: a pipeline run started 10 or more minutes from now puts it back in the queue if "
-                 "the change didn't land.")
+                 f"its change log: a pipeline run started {STUCK_MINUTES} or more minutes from now puts it back in "
+                 "the queue if the change didn't land.")
+# The stored status each banner needs. A link reloaded after the proposal changed again shows no banner,
+# so a reopened proposal is never announced as written.
+BANNER_STATUS = {"applied": "applied", "already_applied": "applied", "stale": "failed", "failed": "failed",
+                 "rejected": "rejected"}
 
 
 def kind_label(kind: str) -> str:
@@ -50,17 +55,22 @@ def new_account(p) -> dict:
 
 
 def account_names(proposals) -> dict:
-    """Account id -> name, from everything the stored proposals know. Used to show ids as names."""
+    """Account id -> name, from everything the stored proposals know. Used to show ids as names.
+
+    Newer evidence wins: a run that refreshes a proposal also sets its run_id, and decided proposals keep the
+    evidence they were made with. So a survivor renamed since an older proposal shows its current name.
+    """
     names = {}
-    for p in proposals:
+    for p in sorted(proposals, key=lambda p: p.get("run_id") or 0):
         ev = p["evidence"]
         for a in [ev.get("crm") or {}] + [c["account"] for c in ev.get("candidates", [])]:
             if a.get("parent_id") and a.get("parent_name"):
                 names[a["parent_id"]] = a["parent_name"]
             if a.get("account_id") and a.get("name"):
                 names[a["account_id"]] = a["name"]
-        if ev.get("survivor"):
-            names[ev["survivor"]["account_id"]] = ev["survivor"]["name"]
+        survivor = ev.get("survivor") or {}
+        if survivor.get("account_id") and survivor.get("name"):
+            names[survivor["account_id"]] = survivor["name"]
         created = (p["result"] or {}).get("created")
         if created and new_account(p).get("name"):
             names[created] = new_account(p)["name"]
@@ -93,7 +103,8 @@ def money(value) -> str:
     x = amount(value)
     if math.isinf(x):
         return str(value)
-    return f"${x:,.0f}" if x == int(x) else f"${x:,.2f}"
+    sign, x = ("-", -x) if x < 0 else ("", x)
+    return f"{sign}${x:,.0f}" if x == int(x) else f"{sign}${x:,.2f}"
 
 
 def show(field: str, value, names: dict) -> str | None:
@@ -119,7 +130,8 @@ def summary(p, names: dict) -> str:
     if kind == "duplicate":
         survivor = changes["duplicate_of_account"]
         name = names.get(survivor, survivor)
-        return f"Duplicate of {name}" + (f" ({survivor})" if name == display_name(p) else "")  # same name: tell them apart
+        same = name == display_name(p)  # two copies with one name: tell them apart by the survivor's id
+        return f"Duplicate of {name}" + (f" ({survivor})" if same else "")
     if kind == "not_on_website":
         return f"Status → {changes['status']}"
     parts = []
@@ -155,6 +167,10 @@ def change_rows(p, names: dict) -> list[dict]:
     return rows
 
 
+def _state(value) -> str:
+    return (value or "").strip().upper()
+
+
 def _differences(site: dict, crm: dict) -> set:
     """Which website-vs-CRM pairs disagree, using the same comparisons as the matching."""
     out = set()
@@ -162,7 +178,8 @@ def _differences(site: dict, crm: dict) -> set:
         out.add("name")
     if norm_street(site["street"]) != norm_street(crm.get("billing_street")):
         out.add("street")
-    if (not same_text(site["city"], crm.get("billing_city")) or site["state"] != crm.get("billing_state")
+    if (not same_text(site["city"], crm.get("billing_city"))
+            or _state(site["state"]) != _state(crm.get("billing_state"))
             or zip5(site["zip"]) != zip5(crm.get("billing_zip"))):
         out.add("place")
     if norm_phone(site["phone"]) != norm_phone(crm.get("phone")):
@@ -209,7 +226,10 @@ def side_by_side(p, names: dict) -> dict:
 def signals(p) -> dict:
     """The match score and its signals; for a create, the weak candidates that were not used."""
     ev = p["evidence"]
-    chips = lambda found: [f"{name} +{points}" for name, points in (found or {}).items()]
+
+    def chips(found):
+        return [f"{name} +{points}" for name, points in (found or {}).items()]
+
     return {"score": ev.get("score"), "chips": chips(ev.get("signals")),
             "candidates": [{"name": c["account"].get("name"), "account_id": c["account"].get("account_id"),
                             "score": c["score"], "chips": chips(c.get("signals"))} for c in ev.get("candidates", [])]}
@@ -229,7 +249,9 @@ def sop(p) -> dict | None:
 
 def queue_order(proposals) -> list:
     """Kinds in KIND_ORDER, then account name."""
-    rank = lambda kind: KIND_ORDER.index(kind) if kind in KIND_ORDER else len(KIND_ORDER)
+    def rank(kind):
+        return KIND_ORDER.index(kind) if kind in KIND_ORDER else len(KIND_ORDER)
+
     return sorted(proposals, key=lambda p: (rank(p["kind"]), display_name(p).casefold(), p["key"]))
 
 
@@ -273,7 +295,7 @@ def mismatches(result) -> list[str]:
 
 def banner(p, outcome: str, names: dict) -> dict | None:
     """The message after a decision, read from the stored proposal. outcome names the decision that was made."""
-    if outcome not in BANNER_OUTCOMES:
+    if outcome not in BANNER_OUTCOMES or p["status"] != BANNER_STATUS.get(outcome, p["status"]):
         return None
     result = p["result"] or {}
     b = {"key": p["key"], "name": p["title"], "details": [], "account_id": None, "retry": False}
