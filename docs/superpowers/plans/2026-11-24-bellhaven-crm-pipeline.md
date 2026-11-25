@@ -72,6 +72,8 @@ Each task was built from this plan, then reviewed twice: once against the spec, 
 1. Don't run the pipeline while you're approving.
 2. If an ownership change (CHOW) reports an error, press Retry on it before running the pipeline again.
 
+**Review app replaced (2026-11-24):** the Streamlit `review_app.py` from Task 12 was replaced by a Meridian-style FastAPI app: run `python -m bellhaven.web` and open http://localhost:8000. See `docs/superpowers/plans/2026-11-24-review-app-redesign.md`. Where Tasks 14 and 16 mention the app, they mean the new one.
+
 ## Background (read this first)
 
 The brief is in `Bellhaven_CRM_Exercise.docx` in the repo root. Here is what exploring the site and the API turned up on 2026-11-24:
@@ -2784,7 +2786,7 @@ $env:BH_API_BASE = "http://localhost:8001/api/v1"; $env:BH_DB_PATH = "data\test.
 
 Expected: `{"locations": 35, "accounts": 121, "proposals": 29, "new": 29, ...}`
 
-- [ ] **Step 3: Practise the demo.** Run `streamlit run review_app.py`, check the banner is green, and walk through it as you would on camera: open the Tiffin CHOW, approve a rename, reject one, then check the change through the mock (`python -c "from bellhaven.crm import CrmClient; print(CrmClient().get_account('<id>'))"`).
+- [ ] **Step 3: Practise the demo.** Run `python -m bellhaven.web`, open http://localhost:8000, check the top bar's badge says **Mock CRM**, and walk through it as you would on camera: open the Tiffin CHOW, approve a rename, reject one, then check the change through the mock (`python -c "from bellhaven.crm import CrmClient; print(CrmClient().get_account('<id>'))"`).
 
 - [ ] **Step 4: Write `mock_crm/approve_all.py`** and approve everything that's left
 
@@ -2875,15 +2877,15 @@ Expected: `"new": 0, "already_known": 29`
 
 ### Task 16: Review the queue and record the demo
 
-- [ ] **Step 0: Make the first live write carefully.** The mock can't confirm the real API's exact write format, so test it on one low-risk change first. Run `streamlit run review_app.py` and check the banner is **red (LIVE SANDBOX)**. Approve only **Update Bellhaven of Portsmouth** (zip 45626 → 45662). Check that the success message shows `'mismatches': {}`, and that the CRM browser shows the new zip. If the mismatches aren't empty or you get an error, stop: fix `crm.py`/`apply.py` (with a test) before approving anything else. Then make the first create and the first CHOW the same way, one at a time, before going faster. A CHOW's result has two mismatch lists, `{'new_account': {}, 'link': {}}`; both should be empty. Don't run the pipeline while approving, and if a CHOW reports an error, press Retry on it before the next pipeline run.
+- [ ] **Step 0: Make the first live write carefully.** The mock can't confirm the real API's exact write format, so test it on one low-risk change first. Run `python -m bellhaven.web`, open http://localhost:8000, and check the badge says **LIVE SANDBOX**. Approve only **Update Bellhaven of Portsmouth** (zip 45626 → 45662). The app asks "Write this to the live sandbox?" and shows the exact change: check it, then press **Write to live CRM**. Check that the green banner says "The CRM stored exactly what was sent", and that "View in Meridian ↗" shows the new zip. If the mismatches aren't empty or you get an error, stop: fix `crm.py`/`apply.py` (with a test) before approving anything else. Then make the first create and the first CHOW the same way, one at a time, before going faster. For a CHOW, the banner lists any field the CRM stored differently on the new account or on the old account's link; there should be none. Don't run the pipeline while approving, and if a CHOW reports an error, press Retry on it before the next pipeline run.
 - [ ] **Step 1: Start a screen recorder** (Loom, or any free recorder), with the app still open.
 - [ ] **Step 2: Record about 2 minutes.**
   - Open the Tiffin CHOW proposal and explain the billing SOP box.
-  - Open a rename (for example Riverbend Manor → Bellhaven of Chagrin Falls) and approve it. Show the success message.
+  - Open a rename (for example Riverbend Manor → Bellhaven of Chagrin Falls) and approve it (confirm the dialog). Show the green "Written" banner.
   - Reject one proposal you genuinely disagree with, with a comment. If you agree with all of them, the most debatable are the `not_on_website` ones (decisions #1 and #2) and the Kettering duplicate survivor (a tie, broken by lowest account id).
   - Open the CRM browser and show the approved change there. Its address is `https://analyst-assessment-production.up.railway.app/crm/<your token>/accounts`, and each account is at `.../accounts/<account_id>`. It's read only and shows the same fields as the API: parent, status, care type, address, revenue and AR, CHOW Current Account, Duplicate Of, Note, Last Updated. A parent's page lists its child accounts. **The token is in that address:** keep the address bar out of the shared recording (full screen, or crop it), because anyone with the token can change your graded sandbox through the API.
 - [ ] **Step 3: Work through the rest of the queue.** Read every proposal's evidence before approving. A queue with unapproved proposals scores the same as doing nothing.
-- [ ] **Step 4: Check the "failed" filter.** For a stale failure, re-run the pipeline and review again. For an API error, read the error saved on the proposal, fix the code, and approve again.
+- [ ] **Step 4: Check the **Failed** tab.** For a stale failure, re-run the pipeline and review again. For an API error, read the error saved on the proposal, fix the code, and approve again.
 - [ ] **Step 5: Run the pipeline again**
 
 Run: `python -m bellhaven.pipeline`
