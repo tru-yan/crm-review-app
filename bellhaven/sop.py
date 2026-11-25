@@ -1,13 +1,17 @@
 """Billing SOP for moving an account to a different parent."""
 
+import math
+
 
 def amount(value) -> float:
-    if value in (None, ""):
+    """Parse a billing amount. Blank means 0; anything unreadable (including NaN) means 'money involved'."""
+    if value is None or (isinstance(value, str) and not value.strip()):
         return 0.0
     try:
-        return float(value)
+        number = float(value)
     except (TypeError, ValueError):
         return float("inf")  # unreadable billing data: treat as money involved and preserve the account
+    return float("inf") if math.isnan(number) else number
 
 
 def must_preserve_old_account(account: dict) -> bool:
