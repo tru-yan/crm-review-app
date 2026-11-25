@@ -2,7 +2,7 @@
 
 The pipeline scrapes every Bellhaven community from the website, matches each one to the CRM, proposes fixes, and writes only reviewer-approved fixes back through the CRM API. This runbook holds what isn't in the code: the background from exploring the site and API, the decisions, how the pieces fit, and the steps still to do. **The code is the reference for how anything works.**
 
-**Status (2026-11-25):** built on branch `bellhaven-pipeline`: the pipeline, the audit and the Meridian-style review app. It was tested against a local mock CRM and a suite of 207 automated tests during the build; both were removed afterwards to keep the repo lean, and git history still has them. Step 1 (the live, read-only pipeline run) is done: it found the 29 proposals expected, and a second run proposed nothing new. Since then, care types follow every offering the website lists (decision #4), which adds a care type change for Findlay and Erie, and Administrator contacts are now checked against the website, which adds 9 Administrator contact changes. The website's phone number now also replaces a different one in the CRM (decision #3), which adds a phone change to 10 updates and 5 phone-only updates. Each account now has one review: its Administrator contact change is part of its Update, which leaves 38 proposals. Nothing has been written to the live sandbox yet. Still to do: the review and demo, the writeup, and the final check (Steps 2–4 below).
+**Status (2026-11-25):** built on branch `bellhaven-pipeline`: the pipeline, the audit and the Meridian-style review app. It was tested against a local mock CRM and a suite of 207 automated tests during the build; both were removed afterwards to keep the repo lean, and git history still has them. Step 1 (the live, read-only pipeline run) is done: it found the 29 proposals expected, and a second run proposed nothing new. Since then, care types follow every offering the website lists (decision #4), which adds a care type change for Findlay and Erie, and Administrator contacts are now checked against the website, which adds 9 Administrator contact changes. The website's phone number now also replaces a different one in the CRM (decision #3), which adds a phone change to 10 updates and 5 phone-only updates. Each account now has one review: its Administrator contact change is part of its Update, which leaves 38 proposals. Nothing has been written to the live sandbox yet. Still to do: the review and demo, and the final check (Steps 2–3 below).
 
 ## Rules for the live phase
 
@@ -84,7 +84,7 @@ The pipeline scrapes every Bellhaven community from the website, matches each on
 
 **Database** (SQLite, `data/state.db`): `runs` 1──* `proposals` 1──* `api_log` 1──* `change_log`, plus the `change_history` view (every field changed, with the proposal and the reviewer's comment). Foreign keys are enforced. `old_value` comes from a fresh read just before writing, and `new_value` is what the CRM returned, so the log records what actually landed.
 
-**Behaviour worth knowing (and explaining in the writeup)**
+**Behaviour worth knowing**
 - **Re-runs:** a proposal's key is a hash of the decision (notes excluded). Rejected proposals are never proposed again. Pending, failed and superseded ones are refreshed with current data. Undecided ones a run no longer produces are superseded, unless a write was attempted. An applied one comes back only if the CRM changed back, judged against decisions made before the run started. One stuck "applying" reopens only after 10 minutes.
 - **Writing:** an atomic claim stops a double click from writing twice. The account is re-read and the write refused if it changed or the rule no longer holds: a CHOW still needs revenue and AR, a resolved account is left alone, and a duplicate's survivor must be live. A lost response is detected as "already applied". Creates happen at most once (our API log first, then a strict name, street and zip search), and only if the latest finished run still proposes them. A CHOW that fails after its create says to retry before the next run. An update with an Administrator contact change checks the contacts (and that the account will be Active) before writing anything, writes the account's fields, then adds the new contact at most once (our API log first, then a same-name search) before making the old one inactive. A retry skips what already landed: the account change isn't written or logged twice, and the contact is reused.
 - **Review app safety:** writes only on POST, with a CSRF token and an Origin check. Nothing is written until the reviewer confirms, enforced by the server. It listens on 127.0.0.1 and serves only local host names, and pages can't be framed. Meridian links go through `/meridian/...` on the app, so the token never appears in a page.
@@ -125,7 +125,7 @@ python -c "from crm_review_app import store; from crm_review_app.config import D
   - Do the same for the first phone-only update (for example Goshen): no phone has been written to this CRM before. If the write is refused, stop before approving any other update with a phone change. Numbers are compared by their digits, so a CRM that only reformats them is fine.
   - Do the same for the first two-type care value (Erie or Findlay: "Assisted Living; Memory Care"): no such value has been written to this CRM before. If the banner shows the CRM stored it differently, or the write is refused, stop and switch decision #4 back to a single value before approving the other one.
 - [ ] **Start a screen recorder** (Loom, or any free recorder), with the app still open.
-- [ ] **Record about 2½ minutes, following [demo-script.md](demo-script.md):** the queue, the Tiffin change of ownership and its billing SOP box, approving Lima, rejecting one proposal, the change in Meridian, and the change history. Keep the Meridian tab's address bar out of the recording (full screen, or crop it): it contains the token.
+- [ ] **Record about 2½ minutes:** the queue, the Tiffin change of ownership and its billing SOP box, approving Lima, rejecting one proposal, the change in Meridian, and the change history. Keep the Meridian tab's address bar out of the recording (full screen, or crop it): it contains the token.
 - [ ] **Work through the rest of the queue.** Read every proposal's evidence before approving. A queue with unapproved proposals scores the same as doing nothing.
 - [ ] **Check the Failed tab.** For a stale failure, re-run the pipeline and review again. For an API error, read the error saved on the proposal, fix the code, and approve again. If you reject one by mistake, put it back in the queue with the command below, using the key at the end of its page's address (`/proposals/<key>`):
 
@@ -136,12 +136,7 @@ python -c "import sys; from crm_review_app import store; from crm_review_app.con
 - [ ] **Run the pipeline again:** `python -m crm_review_app.pipeline`. Expected: `"new": 0`, and the app shows 0 pending.
 - [ ] **Share the recording** so anyone with the link can view it, and save the link for the submission form.
 
-## Step 3: Writeup
-
-- [ ] **Review [`WRITEUP.md`](../WRITEUP.md)** (drafted 2026-11-25): the matching approach, how AI tools were used, and what to build next. Its numbers come from the read-only run. After the review, you can add how many proposals you approved and rejected (`store.counts`).
-- [ ] **Commit it:** `git add WRITEUP.md`, then `git commit -m "docs: writeup"`.
-
-## Step 4: Final check and submit
+## Step 3: Final check and submit
 
 - [ ] `python -m crm_review_app.pipeline`: expect `"new": 0`.
 - [ ] `python -m crm_review_app.audit --before data\snapshot\crm.json` against the live sandbox (read-only): expect `OK`, or only `still proposed` lines for proposals you rejected on purpose. Investigate any other `PROBLEM` line.

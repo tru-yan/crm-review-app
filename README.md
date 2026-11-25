@@ -82,6 +82,4 @@ schtasks /Create /SC DAILY /ST 06:00 /TN "Bellhaven pipeline" /TR "cmd /c cd /d 
 | `deploy/crontab.txt` | The daily schedule |
 | `docs/runbook.md` | What exploring the site and API found, the decisions, how the pieces fit, and the remaining live-phase steps |
 | `docs/review-app-design.md` | The review app's design |
-| `docs/demo-script.md` | The script for the demo video, with a checklist for before you record |
-| `WRITEUP.md` | The matching approach, how AI tools were used, and what to build next |
 | `data/` (not in git) | `state.db`, and `snapshot/crm.json` for the audit |
