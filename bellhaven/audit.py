@@ -1,6 +1,6 @@
 """Read-only check of the CRM's end state. Works against the mock or the live sandbox.
 
-Run:  python -m bellhaven.audit --before data\snapshot\crm.json
+Run:  python -m bellhaven.audit --before data\\snapshot\\crm.json
 """
 import argparse
 import datetime
