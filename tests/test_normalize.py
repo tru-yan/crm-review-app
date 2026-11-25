@@ -10,6 +10,8 @@ from bellhaven.normalize import crm_care_types, is_po_box, norm_name, norm_phone
     ("980 West Michigan Avenue", "980 W Michigan Ave"),
     ("100 Main St Suite 4", "100 Main Street"),
     ("100 Main St, Ste. 200", "100 Main St"),
+    ("4850 N.W. Sylvania Ave", "4850 NW Sylvania Ave"),
+    ("10 S.E. Main St.", "10 SE Main Street"),
 ])
 def test_street_variants_normalize_equal(a, b):
     assert norm_street(a) == norm_street(b)
@@ -39,6 +41,11 @@ def test_phone():
     assert norm_phone("(614) 250-9447") == "6142509447"
     assert norm_phone("1-614-250-9447") == "6142509447"
     assert norm_phone("") == ""
+
+
+def test_phone_extensions_are_ignored():
+    assert norm_phone("(614) 250-9447 ext 12") == "6142509447"
+    assert norm_phone("614-250-9447 x1234") == "6142509447"
 
 
 def test_name_normalization_for_similarity():

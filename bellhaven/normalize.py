@@ -22,7 +22,7 @@ CARE_TYPE_MAP = {
 
 def norm_street(street: str) -> str:
     s = _UNIT.sub(" ", street or "")
-    s = re.sub(r"[.,]", " ", s.lower())
+    s = s.lower().replace(".", "").replace(",", " ")
     return " ".join(_STREET_WORDS.get(word, word) for word in s.split())
 
 
@@ -35,7 +35,8 @@ def zip5(zip_code: str) -> str:
 
 
 def norm_phone(phone: str) -> str:
-    digits = re.sub(r"\D", "", phone or "")
+    p = re.sub(r"\s*(?:ext\.?|extension|x)\s*\d+\s*$", "", phone or "", flags=re.IGNORECASE)
+    digits = re.sub(r"\D", "", p)
     return digits[-10:] if len(digits) >= 10 else ""
 
 
