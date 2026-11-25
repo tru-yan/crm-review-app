@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Review queue</h1>
+<p class="muted">
+{%- if run and run.ok %}Last pipeline run {{ run.started }}: {{ run.stats.locations }} communities on the website, {{ run.stats.accounts }} CRM accounts, {{ run.stats.proposals }} proposals.
+{%- elif run %}Last pipeline run {{ run.started }}: {{ run.result }}
+{%- else %}No pipeline run yet. Run <code>python -m bellhaven.pipeline</code> to fill the queue.{% endif -%}
+</p>
+<div class="tabs">
+{% for value, label, count in tabs %}<a href="/queue?status={{ value }}" class="{{ 'on' if value == status }}">{{ label }} <span class="count">{{ count }}</span></a>{% endfor %}
+</div>
+<form class="searchrow" method="get" action="/queue">
+  <input type="hidden" name="status" value="{{ status }}">
+  <select name="kind" aria-label="Kind">
+    <option value="">All kinds</option>
+    {% for value, label in kinds.items() %}<option value="{{ value }}" {{ 'selected' if value == kind }}>{{ label }}</option>{% endfor %}
+  </select>
+  <input type="text" name="q" value="{{ q }}" placeholder="Search account or city" aria-label="Search">
+  <button type="submit">Filter</button>
+  {% if kind or q %}<a class="clear" href="/queue?status={{ status }}">Clear</a>{% endif %}
+</form>
+{% if items %}
+<div class="tablebox">
+<table class="queue">
+  <thead><tr><th>Kind</th><th>Account</th><th>Change</th><th>Status</th></tr></thead>
+  <tbody>
+  {% for it in items %}
+  <tr data-href="/proposals/{{ it.p.key }}">
+    <td><span class="kind {{ it.p.kind }}">{{ kind_label(it.p.kind) }}</span></td>
+    <td><a href="/proposals/{{ it.p.key }}">{{ it.name }}</a>{% if it.p.confidence == 'low' %} <span class="careful">Review carefully</span>{% endif %}
+      <div class="sub">{{ it.place }}{% if it.p.account_id %} · {{ it.p.account_id }}{% endif %}</div></td>
+    <td>{{ it.summary }}</td>
+    <td><span class="status {{ it.p.status }}">{{ it.p.status | capitalize }}</span></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% elif status == 'pending' and not kind and not q %}
+<div class="empty">No pending proposals. Run the pipeline to check for changes.</div>
+{% elif not kind and not q %}
+<div class="empty">No {% if status != 'all' %}{{ status }} {% endif %}proposals yet.</div>
+{% else %}
+<div class="empty">Nothing matches these filters.</div>
+{% endif %}
+{% endblock %}

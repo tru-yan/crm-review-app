@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Change history · Bellhaven review{% endblock %}
+{% block content %}
+<h1>Change history</h1>
+<p class="muted">Every field changed through the API, newest first.</p>
+<form class="searchrow" method="get" action="/history">
+  <input type="text" name="q" value="{{ q }}" placeholder="Account name or id" aria-label="Search">
+  <button type="submit">Filter</button>
+  {% if q %}<a class="clear" href="/history">Clear</a>{% endif %}
+</form>
+{% if entries %}
+<div class="tablebox">
+<table>
+  <thead><tr><th>When</th><th>Account</th><th>Action</th><th>Field</th><th>Before → After</th><th>Comment</th></tr></thead>
+  <tbody>
+  {% for e in entries %}
+  {% set old = show(e.field, e.old_value, names) %}{% set new = show(e.field, e.new_value, names) %}
+  <tr>
+    <td class="nowrap">{{ when(e.changed_at) }}</td>
+    <td><a href="/proposals/{{ e.proposal_key }}">{{ e.account_name }}</a>
+      {%- set link = meridian_url(e.account_id) %}{% if link %} <a class="ext" href="{{ link }}" target="_blank" rel="noopener noreferrer">↗</a>{% endif %}
+      <div class="sub">{{ e.account_id }}</div></td>
+    <td>{{ e.action }}</td>
+    <td>{{ field_label(e.field) }}</td>
+    <td class="wrapcell">
+      {%- if e.action == 'update' %}{% if old is none %}<span class="emptyval">empty</span>{% else %}<s>{{ old }}</s>{% endif %} → {% endif -%}
+      {%- if new is none %}<span class="emptyval">empty</span>{% else %}<span class="after">{{ new }}</span>{% endif %}</td>
+    <td>{{ e.reviewer_comment or '' }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% elif q %}
+<div class="empty">No changes match "{{ q }}".</div>
+{% else %}
+<div class="empty">Nothing has been written to the CRM yet.</div>
+{% endif %}
+{% endblock %}

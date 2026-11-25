@@ -1,0 +1,11 @@
+<h1 class="confirm-title">Write this to the live sandbox?</h1>
+<p class="muted">This is the graded CRM. It has no delete.</p>
+<p><b>{{ name }}</b>{% if p.account_id %} <span class="muted">· {{ p.account_id }}</span>{% endif %}</p>
+<table class="changes compact">
+  {% for r in rows %}
+  <tr><td class="lbl">{% if r.group %}{{ r.group }}: {% endif %}{{ r.label }}</td>
+    <td>{% if r.new %}<span class="newtag">new</span>{% elif r.now is none %}<span class="emptyval">empty</span>{% else %}<s>{{ r.now }}</s>{% endif %}
+      → {% if r.after is none %}<span class="emptyval">empty</span>{% else %}<span class="after">{{ r.after }}</span>{% endif %}</td></tr>
+  {% endfor %}
+</table>
+{% if p.kind in ('create', 'chow') %}<p class="creates">Creates 1 account that can't be deleted.</p>{% endif %}
