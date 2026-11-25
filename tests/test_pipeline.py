@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from bellhaven import pipeline, store
@@ -35,3 +37,16 @@ def test_a_failed_read_changes_nothing():
         pipeline.run(conn, BrokenCrm([]), lambda: [make_location()], "2026-11-26")
     assert [r["status"] for r in store.list_proposals(conn)] == ["pending"]
     assert crm.writes == []
+
+
+def test_a_failed_run_records_its_error():
+    conn = store.connect(":memory:")
+
+    def broken_scrape():
+        raise ScrapeError("site layout changed")
+
+    with pytest.raises(ScrapeError):
+        pipeline.run(conn, FakeCrm(parent_accounts()), broken_scrape, "2026-11-25")
+    run = store.latest_run(conn)
+    assert run["finished_at"] is None
+    assert json.loads(run["stats"]) == {"error": "ScrapeError: site layout changed"}

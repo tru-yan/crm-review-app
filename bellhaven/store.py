@@ -247,3 +247,19 @@ def counts(conn) -> dict:
 def latest_finished_run(conn) -> int | None:
     """The id of the most recent pipeline run that completed, or None if none has."""
     return conn.execute("SELECT MAX(id) AS id FROM runs WHERE finished_at IS NOT NULL").fetchone()["id"]
+
+
+def fail_run(conn, run_id: int, error: str) -> None:
+    """Record why a run stopped. finished_at stays NULL, so a failed run never counts as finished."""
+    with conn:
+        conn.execute("UPDATE runs SET stats=? WHERE id=?", (json.dumps({"error": error}), run_id))
+
+
+def latest_run(conn):
+    """The most recent pipeline run, finished or not, or None if there has never been one."""
+    return conn.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 1").fetchone()
+
+
+def list_runs(conn):
+    """Every pipeline run, newest first."""
+    return conn.execute("SELECT * FROM runs ORDER BY id DESC").fetchall()

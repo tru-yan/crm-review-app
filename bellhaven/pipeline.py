@@ -14,17 +14,21 @@ def run(conn, client, scrape_fn, today: str) -> dict:
     """One daily run: scrape, read the CRM, store proposals. Never writes to the CRM.
 
     If the scrape or a CRM read fails, the exception propagates before any proposal is touched, so nothing is
-    superseded, and cron sees a non-zero exit. The run's row is then left with finished_at NULL, which means the
-    run failed or is still running.
+    superseded, and cron sees a non-zero exit. The run's row keeps finished_at NULL and its stats record the
+    error, so the review app can show why the run stopped.
     """
     run_id = store.start_run(conn)
-    locations = scrape_fn()
-    accounts, contacts = client.list_accounts(), client.list_contacts()
-    proposals = build_proposals(locations, accounts, contacts, today)
-    new, known = store.add_proposals(conn, run_id, proposals)
-    superseded = store.supersede_missing(conn, [p.key for p in proposals])
-    stats = {"locations": len(locations), "accounts": len(accounts), "contacts": len(contacts),
-             "proposals": len(proposals), "new": new, "already_known": known, "superseded": superseded}
+    try:
+        locations = scrape_fn()
+        accounts, contacts = client.list_accounts(), client.list_contacts()
+        proposals = build_proposals(locations, accounts, contacts, today)
+        new, known = store.add_proposals(conn, run_id, proposals)
+        superseded = store.supersede_missing(conn, [p.key for p in proposals])
+        stats = {"locations": len(locations), "accounts": len(accounts), "contacts": len(contacts),
+                 "proposals": len(proposals), "new": new, "already_known": known, "superseded": superseded}
+    except Exception as e:
+        store.fail_run(conn, run_id, f"{type(e).__name__}: {e}")
+        raise
     store.finish_run(conn, run_id, stats)
     return stats
 

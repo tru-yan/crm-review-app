@@ -168,3 +168,17 @@ def test_failed_proposal_with_a_logged_write_is_not_superseded():
     store.set_status(conn, p.key, "failed")
     assert store.supersede_missing(conn, []) == 0
     assert store.get(conn, p.key)["status"] == "failed"
+
+
+def test_runs_are_listed_newest_first_and_a_failure_is_recorded():
+    conn = store.connect(":memory:")
+    assert store.latest_run(conn) is None
+    first = store.start_run(conn)
+    store.finish_run(conn, first, {"proposals": 0})
+    second = store.start_run(conn)
+    store.fail_run(conn, second, "CrmError: timeout")
+    assert [r["id"] for r in store.list_runs(conn)] == [second, first]
+    latest = store.latest_run(conn)
+    assert latest["id"] == second and latest["finished_at"] is None
+    assert json.loads(latest["stats"]) == {"error": "CrmError: timeout"}
+    assert store.latest_finished_run(conn) == first
