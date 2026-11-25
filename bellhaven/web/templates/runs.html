@@ -11,7 +11,7 @@
   {% for r in runs %}
   <tr>
     <td class="nowrap">{{ r.started }}</td>
-    <td>{% if r.ok %}<span class="status applied">OK</span>{% else %}<span class="status failed">{{ r.result }}</span>{% endif %}</td>
+    <td>{% if r.ok %}<span class="status applied">OK</span>{% else %}<span class="status {{ 'failed' if 'error' in r.stats else 'pending' }}">{{ r.result }}</span>{% endif %}</td>
     {% if r.ok %}
     <td>{{ r.stats.locations }}</td><td>{{ r.stats.accounts }}</td><td>{{ r.stats.contacts }}</td><td>{{ r.stats.proposals }}</td>
     <td>{{ r.stats.new }} / {{ r.stats.already_known }} / {{ r.stats.superseded }}</td>

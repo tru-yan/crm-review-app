@@ -84,7 +84,7 @@
 {% if p.status in ('pending', 'failed') %}
 <form method="post" action="/proposals/{{ p.key }}/approve" id="decide" class="actions"{% if live %} data-confirm="confirm-dialog"{% endif %}>
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  <input type="hidden" name="confirmed" value="">
+  <input type="hidden" name="confirmed" value="" autocomplete="off">
   <label for="comment" class="lbl">Reviewer comment (optional)</label>
   <input type="text" id="comment" name="comment" placeholder="Why you approve or reject this">
   <div class="buttons">

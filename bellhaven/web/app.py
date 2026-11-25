@@ -10,6 +10,8 @@ from urllib.parse import urlencode, urlsplit
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader
 
@@ -18,7 +20,9 @@ from ..crm import CrmClient
 from . import present, review
 
 HERE = Path(__file__).parent
-DEFAULT_ORIGINS = ("http://127.0.0.1:8000", "http://localhost:8000")
+PORT = 8000
+DEFAULT_ORIGINS = (f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}")
+LOCAL_HOSTS = ["127.0.0.1", "localhost", "testserver"]  # testserver: FastAPI's TestClient
 TABS = ("pending", "applied", "rejected", "failed", "superseded", "all")
 
 
@@ -31,6 +35,15 @@ def create_app(conn, client, live: bool, meridian_base: str | None, allowed_orig
     lock = threading.Lock()  # requests run in worker threads; they take turns on the one SQLite connection
     templates = Jinja2Templates(env=Environment(loader=FileSystemLoader(HERE / "templates"), autoescape=True))
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
+    # only this machine's own names: a page fetched under another host name (DNS rebinding) never gets token links
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=LOCAL_HOSTS)
+
+    @app.middleware("http")
+    async def no_framing(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Frame-Options"] = "DENY"  # no clickjacking: another site can't frame these pages
+        response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+        return response
     meridian = meridian_base.rstrip("/") if live and meridian_base else None
 
     def meridian_url(account_id) -> str | None:
@@ -70,6 +83,14 @@ def create_app(conn, client, live: bool, meridian_base: str | None, allowed_orig
         target = present.next_pending(rows, key)
         path = f"/proposals/{target}" if target else "/queue"
         return RedirectResponse(f"{path}?{urlencode({'last': key, 'outcome': outcome})}", status_code=303)
+
+    @app.exception_handler(StarletteHTTPException)
+    def refused(request: Request, exc: StarletteHTTPException):
+        """403, 404 and 405 as a page with a way back, not raw JSON (an app restart makes open forms stale)."""
+        with lock:
+            response = page(request, "error.html", exc.status_code, message=exc.detail)
+        response.headers.update(exc.headers or {})
+        return response
 
     @app.get("/")
     def home():

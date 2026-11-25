@@ -175,3 +175,34 @@ def test_the_token_never_appears_on_mock_pages(monkeypatch, tmp_path):
     http = TestClient(build())
     for path in ("/queue", "/history", "/runs"):
         assert "tok_do_not_show" not in http.get(path).text
+
+
+def test_decided_proposals_show_their_decision_and_change_log():
+    http, app, crm, conn = client_for()
+    ps = by_kind(conn)
+    http.post(f"/proposals/{ps['duplicate']['key']}/reject", data=form(app, comment="separate building"))
+    for kind in ("chow", "create", "not_on_website", "update"):
+        http.post(f"/proposals/{ps[kind]['key']}/approve", data=form(app))
+    for kind in ("chow", "create", "not_on_website", "update"):
+        page = http.get(f"/proposals/{ps[kind]['key']}").text
+        assert "Applied at" in page and "Change log" in page, kind
+    page = http.get(f"/proposals/{ps['duplicate']['key']}").text
+    assert "Rejected at" in page and "separate building" in page and "Change log" not in page
+
+
+def test_refusals_are_pages_and_only_local_host_names_are_served():
+    http, app, crm, conn = client_for(live=True)
+    r = http.post(f"/proposals/{by_kind(conn)['update']['key']}/approve", data={"csrf_token": "from before a restart"})
+    assert r.status_code == 403 and r.headers["content-type"].startswith("text/html") and "Reload the page" in r.text
+    assert http.get("/no-such-page").status_code == 404
+    assert http.get("/queue", headers={"Host": "evil.test:8000"}).status_code == 400  # DNS rebinding
+    headers = http.get("/queue").headers
+    assert headers["x-frame-options"] == "DENY" and "frame-ancestors 'none'" in headers["content-security-policy"]
+    assert crm.writes == []
+
+
+def test_no_meridian_links_on_the_mock_even_if_a_base_is_given():
+    crm, conn = make_queue()
+    http = TestClient(create_app(conn, crm, live=False, meridian_base=MERIDIAN))
+    for path in ["/queue", "/history", "/runs"] + [f"/proposals/{p['key']}" for p in by_kind(conn).values()]:
+        assert "tok_secret" not in http.get(path).text, path
