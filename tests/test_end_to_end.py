@@ -1,11 +1,12 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from bellhaven import pipeline, store
-from bellhaven.apply import apply_proposal
+from bellhaven.apply import AlreadyHandled, apply_proposal
 from bellhaven.audit import audit
 from bellhaven.crm import CrmClient
 from mock_crm.server import create_app
-from tests.factories import CEDAR, HARBORVIEW, MILLSTONE, make_account, make_location, parent_accounts
+from tests.factories import BH, CEDAR, HARBORVIEW, MILLSTONE, make_account, make_location, parent_accounts
 
 TODAY = "2026-11-25"
 
@@ -42,6 +43,10 @@ def world():
     return {"accounts": accounts, "contacts": []}, locations
 
 
+def without(account, *fields):
+    return {k: v for k, v in account.items() if k not in fields + ("updated_at",)}
+
+
 def test_full_review_cycle_against_the_mock():
     seed, locations = world()
     crm = CrmClient(token="test", base="http://testserver/api/v1", session=TestClient(create_app(seed)))
@@ -58,3 +63,16 @@ def test_full_review_cycle_against_the_mock():
     assert pipeline.run(conn, crm, lambda: locations, "2026-11-26")["proposals"] == 0
     assert audit(seed, crm.list_accounts(), crm.list_contacts(), locations, TODAY) == []
     assert {h["action"] for h in store.change_history(conn)} == {"create", "update"}
+
+    # the end state itself, not only what the audit infers
+    before = {a["account_id"]: a for a in seed["accounts"]}
+    final = {a["account_id"]: a for a in crm.list_accounts()}
+    new_owner_account = final[final["A2"]["chow_current_account"]]
+    assert without(final["A2"], "chow_current_account") == without(before["A2"], "chow_current_account")
+    assert new_owner_account["parent_id"] == BH and new_owner_account["status"] == "Active"
+    assert final["A4"]["duplicate_of_account"] == "A3" and final["A4"]["status"] == "Inactive"
+    assert sum(a["name"] == "Bellhaven of Batavia" for a in final.values()) == 1
+    assert final["A5"]["status"] == final["A6"]["status"] == "Needs Review"
+    assert final["A6"]["parent_id"] == BH and not final["A6"]["chow_current_account"]
+    with pytest.raises(AlreadyHandled):
+        apply_proposal(conn, crm, pending[0])  # an applied proposal can't be written again
