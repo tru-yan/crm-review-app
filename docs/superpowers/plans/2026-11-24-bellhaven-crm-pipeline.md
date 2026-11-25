@@ -2881,7 +2881,7 @@ Expected: `"new": 0, "already_known": 29`
   - Open the Tiffin CHOW proposal and explain the billing SOP box.
   - Open a rename (for example Riverbend Manor → Bellhaven of Chagrin Falls) and approve it. Show the success message.
   - Reject one proposal you genuinely disagree with, with a comment. If you agree with all of them, the most debatable are the `not_on_website` ones (decisions #1 and #2) and the Kettering duplicate survivor (a tie, broken by lowest account id).
-  - Open the CRM browser and show the approved change there.
+  - Open the CRM browser and show the approved change there. Its address is `https://analyst-assessment-production.up.railway.app/crm/<your token>/accounts`, and each account is at `.../accounts/<account_id>`. It's read only and shows the same fields as the API: parent, status, care type, address, revenue and AR, CHOW Current Account, Duplicate Of, Note, Last Updated. A parent's page lists its child accounts. **The token is in that address:** keep the address bar out of the shared recording (full screen, or crop it), because anyone with the token can change your graded sandbox through the API.
 - [ ] **Step 3: Work through the rest of the queue.** Read every proposal's evidence before approving. A queue with unapproved proposals scores the same as doing nothing.
 - [ ] **Step 4: Check the "failed" filter.** For a stale failure, re-run the pipeline and review again. For an API error, read the error saved on the proposal, fix the code, and approve again.
 - [ ] **Step 5: Run the pipeline again**
