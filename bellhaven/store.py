@@ -168,7 +168,9 @@ def supersede_missing(conn, current_keys) -> int:
                      " (SELECT 1 FROM api_log a WHERE a.proposal_key = p.key))")
                  if r["key"] not in keys]
         conn.executemany("UPDATE proposals SET status='superseded', decided_at=?"
-                         " WHERE key=? AND status IN ('pending', 'failed')", [(_now(), k) for k in stale])
+                         " WHERE key=? AND (status = 'pending' OR (status = 'failed' AND NOT EXISTS"
+                         " (SELECT 1 FROM api_log a WHERE a.proposal_key = proposals.key)))",
+                         [(_now(), k) for k in stale])
     return len(stale)
 
 
@@ -240,3 +242,8 @@ def change_history(conn, account_id: str | None = None, proposal_key: str | None
 
 def counts(conn) -> dict:
     return {r[0]: r[1] for r in conn.execute("SELECT status, COUNT(*) FROM proposals GROUP BY status")}
+
+
+def latest_finished_run(conn) -> int | None:
+    """The id of the most recent pipeline run that completed, or None if none has."""
+    return conn.execute("SELECT MAX(id) AS id FROM runs WHERE finished_at IS NOT NULL").fetchone()["id"]

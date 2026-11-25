@@ -87,7 +87,7 @@ def _find_created(conn, client, key: str, payload: dict) -> dict | None:
     return same[0] if same else None
 
 
-def _create_once(conn, client, key: str, payload: dict) -> dict:
+def _create_once(conn, client, key: str, payload: dict, run_id: int) -> dict:
     found = _find_created(conn, client, key, payload)
     if found:
         if found.get("duplicate_of_account") or found.get("status") != "Active":
@@ -99,6 +99,11 @@ def _create_once(conn, client, key: str, payload: dict) -> dict:
             call_id = store.log_call(conn, key, "POST (recovered)", "/accounts", payload, found)
             store.log_changes(conn, call_id, key, found["account_id"], "create", payload, {}, found)
         return found
+    latest = store.latest_finished_run(conn)
+    if latest is not None and run_id < latest:
+        # kept only because an earlier attempt was logged; the website may have changed since, so never POST it
+        raise StaleProposal({"proposal": {"expected": f"produced by the latest pipeline run ({latest})",
+                                          "actual": f"last produced by run {run_id}; re-run the pipeline"}})
     created, call_id = _call(conn, key, "POST", "/accounts", payload, lambda: client.create_account(payload))
     if not created.get("account_id"):
         raise CrmError(f"POST /accounts returned no account_id: {str(created)[:300]}")
@@ -120,13 +125,14 @@ def apply_proposal(conn, client, row) -> dict:
         raise ValueError(f"unknown proposal kind {kind!r}")
     if not store.claim(conn, key):
         status = (store.get(conn, key) or {"status": "missing"})["status"]
-        hint = ": wait for it to finish, or re-run the pipeline if it is stuck" if status == "applying" else ""
+        hint = (": wait for it to finish; if it stays stuck, re-run the pipeline 10 or more minutes from now"
+                if status == "applying" else "")
         raise AlreadyHandled(f"'{row['title']}' is {status}, not pending or failed{hint}")
     row = store.get(conn, key)  # the latest stored version: a pipeline run may have refreshed it since
     changes, before = json.loads(row["changes"]), json.loads(row["before"])
 
     if kind == "create":
-        created = _create_once(conn, client, key, changes)
+        created = _create_once(conn, client, key, changes, row["run_id"])
         return {"created": created["account_id"], "mismatches": _mismatches(changes, created)}
 
     current = _read(client, account_id)
@@ -143,7 +149,7 @@ def apply_proposal(conn, client, row) -> dict:
         _check_survivor(client, changes["duplicate_of_account"])
 
     if kind == "chow":
-        new = _create_once(conn, client, key, changes["new_account"])
+        new = _create_once(conn, client, key, changes["new_account"], row["run_id"])
         link = {"chow_current_account": new["account_id"]}
         try:
             old = _patch(conn, client, key, current, link)

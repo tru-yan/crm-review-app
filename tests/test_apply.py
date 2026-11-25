@@ -195,3 +195,29 @@ def test_duplicate_is_refused_if_its_survivor_is_no_longer_live():
     with pytest.raises(StaleProposal, match="survivor"):
         apply_proposal(conn, crm, row)
     assert crm.writes == []
+
+
+def test_a_create_the_pipeline_no_longer_proposes_is_never_posted():
+    class RejectsOnce(FakeCrm):
+        rejected = False
+
+        def create_account(self, body):
+            if not self.rejected:
+                self.rejected = True
+                raise CrmError("POST /accounts -> 422: bad body")
+            return super().create_account(body)
+
+    crm = RejectsOnce(parent_accounts())
+    conn, row = setup_with(crm, [make_location(name="Bellhaven of Batavia", zip="45103")])
+    store.finish_run(conn, row["run_id"], {})
+    with pytest.raises(CrmError):
+        apply_proposal(conn, crm, row)
+    store.set_status(conn, row["key"], "failed")
+    later = store.start_run(conn)  # the community left the website: the next run doesn't propose it any more
+    store.add_proposals(conn, later, [])
+    store.supersede_missing(conn, [])
+    store.finish_run(conn, later, {})
+    assert store.get(conn, row["key"])["status"] == "failed"  # kept, because a write attempt was logged
+    with pytest.raises(StaleProposal, match="latest pipeline run"):
+        apply_proposal(conn, crm, row)
+    assert crm.writes == []

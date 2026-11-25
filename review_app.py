@@ -90,8 +90,8 @@ def show(conn, client, row) -> None:
             st.error(f"Last attempt failed at {row['decided_at']}: {row['result']}")
         if row["status"] == "applying":
             st.warning("Being applied right now, or an earlier apply was interrupted. If it stays here, check this "
-                       "account's change log; re-running the pipeline puts it back in the queue if the change "
-                       "didn't land.")
+                       "account's change log; a pipeline run started 10 or more minutes later puts it back in "
+                       "the queue if the change didn't land.")
         if row["status"] in ("pending", "failed"):
             comment = st.text_input("Reviewer comment", key=f"comment-{row['key']}")
             approve_col, reject_col = st.columns(2)
