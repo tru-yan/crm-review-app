@@ -1,6 +1,5 @@
 {% import "_values.html" as val %}
-<h1 class="confirm-title">Write this to the live sandbox?</h1>
-<p class="muted">This is the graded CRM. It has no delete.</p>
+<h1 class="confirm-title">Confirmation</h1>
 <p><b>{{ name }}</b>{% if p.account_id %} <span class="muted">· {{ p.account_id }}</span>{% endif %}</p>
 <table class="changes compact">
   {% for r in rows %}

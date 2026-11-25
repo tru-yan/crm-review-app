@@ -118,7 +118,7 @@ python -c "from crm_review_app import store; from crm_review_app.config import D
 
 - [ ] **Make the first live write carefully.** Nothing has written to the real API yet, so confirm its exact write format on one low-risk change first.
   - Run `python -m crm_review_app.web`, open http://localhost:8000, and check the badge says **LIVE SANDBOX**.
-  - Approve only **Update Bellhaven of Portsmouth** (zip 45626 → 45662). The app asks "Write this to the live sandbox?" and shows the exact change: check it, then press **Write to live CRM**.
+  - Approve only **Update Bellhaven of Portsmouth** (zip 45626 → 45662). The app asks for confirmation and shows the exact change: check it, then press **Confirm**.
   - Check that the green banner says "The CRM stored exactly what was sent", and that "View in Meridian ↗" shows the new zip. If anything was stored differently, or you get an error, stop and fix `crm.py`/`apply.py` before approving anything else.
   - Then make the first create and the first CHOW the same way, one at a time, before going faster. Use Batavia and Marietta, and leave Tiffin and Lima pending. For a CHOW, the banner lists any field the CRM stored differently on the new account or the old account's link; there should be none.
   - Do the same for the first update with an Administrator contact change, best a contact-only one (Wooster, Saline or Meadville): no contact has been written to this CRM before. A replacement adds the new contact first, then makes the old one inactive; if a step fails, press Retry (what landed is not written again, and the new contact is reused). Check the account's page in Meridian lists the new administrator.

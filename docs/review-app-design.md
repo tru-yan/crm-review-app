@@ -10,7 +10,7 @@ This describes the app as it is now. The code in `crm_review_app/web/` is the re
 |---|---|
 | Screens | Review queue, proposal detail, change history, pipeline runs |
 | Layout | A queue table, then one page per proposal (Meridian's list → detail pattern), moving to the next pending proposal after each decision |
-| Confirmation | Every approval asks "Write this to the live sandbox?" first, and the server enforces it |
+| Confirmation | Every approval asks for confirmation first, and the server enforces it |
 | Technology | FastAPI with Jinja2 pages rendered on the server, Meridian's CSS, and a little vanilla JavaScript. No Node and no build step. It replaced an earlier Streamlit app. |
 | Where it runs | This machine only: `python -m crm_review_app.web` serves http://127.0.0.1:8000 |
 
@@ -76,7 +76,7 @@ This describes the app as it is now. The code in `crm_review_app/web/` is the re
 - **Decided:** "{Status} at {time} · {comment}", any fields the CRM stored differently, and the change log for this proposal (account, action, field, before → after, when).
 
 ### Confirmation before a write
-- Approve opens a dialog (or, with JavaScript off, the server's own confirmation page) titled "Write this to the live sandbox?", noting "This is the graded CRM. It has no delete." It lists the account and the exact Now → After rows, and for a create or CHOW, "Creates 1 account that can't be deleted." (for an update with a contact change, "Adds 1 contact that can't be deleted.") Cancel, or a red "Write to live CRM" button.
+- Approve opens a dialog (or, with JavaScript off, the server's own confirmation page) titled "Confirmation". It lists the account and the exact Now → After rows, and for a create or CHOW, "Creates 1 account that can't be deleted." (for an update with a contact change, "Adds 1 contact that can't be deleted.") Cancel, or a red "Confirm" button.
 - **The server enforces it:** `POST /proposals/{key}/approve` without `confirmed=yes` returns the confirmation page for a pending or failed proposal, and writes nothing. A proposal that's already decided or being applied gets the "Already handled" banner instead.
 
 ### After a decision
