@@ -41,3 +41,28 @@ def test_each_account_goes_to_its_best_location_only():
     result = assign_matches([nearby, exact], [make_account()], {}, skip_ids=set())
     assert [m.account["account_id"] for m in result["/communities/exact"]] == ["A1"]
     assert result["/communities/nearby"] == []
+
+
+def test_skipped_accounts_are_never_matched():
+    result = assign_matches([make_location()], [make_account()], {}, skip_ids={"A1"})
+    assert result["/communities/bellhaven-of-testville"] == []
+
+
+def test_weak_matches_are_kept_but_below_the_match_threshold():
+    acct = make_account(name="Other Place", billing_street="100 Mains St", phone="(614) 555-0199")
+    [m] = assign_matches([make_location()], [acct], {}, skip_ids=set())["/communities/bellhaven-of-testville"]
+    assert WEAK_THRESHOLD <= m.score < MATCH_THRESHOLD
+    assert "street_fuzzy" in m.signals
+
+
+def test_assignment_does_not_depend_on_input_order():
+    locs = [make_location(slug=f"/communities/{n}", street=f"{n} Main Street") for n in (100, 200)]
+    accts = [make_account(account_id=f"A{n}", billing_street=f"{n} Main St") for n in (100, 200)]
+    accts.append(make_account(account_id="DUP", billing_street="100 Main St"))
+
+    def ids(result):
+        return {slug: [m.account["account_id"] for m in ms] for slug, ms in result.items()}
+
+    forward = assign_matches(locs, accts, {}, skip_ids=set())
+    backward = assign_matches(locs[::-1], accts[::-1], {}, skip_ids=set())
+    assert ids(forward) == ids(backward) == {"/communities/100": ["A100", "DUP"], "/communities/200": ["A200"]}
