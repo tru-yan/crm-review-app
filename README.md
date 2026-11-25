@@ -15,7 +15,7 @@ Settings come from `.env` or environment variables:
 
 | Setting | Required | Default | What it is |
 |---|---|---|---|
-| `BH_API_TOKEN` | yes | — | Your CRM API token. It's also part of the CRM browser's address, so keep it out of screen recordings. |
+| `BH_API_TOKEN` | yes | — | Your CRM API token. It's also part of the CRM browser's address, so don't share that tab's address. |
 | `BH_DB_PATH` | no | `data\state.db` | Where the SQLite database lives |
 | `BH_NOT_ON_WEBSITE_STATUS` | no | `Needs Review` | Status proposed for a Bellhaven account the website no longer lists |
 | `BH_SITE_BASE` | no | the exercise site | The website and API host |
@@ -44,7 +44,7 @@ python -c "from crm_review_app import store; from crm_review_app.config import D
 - **Proposal page:** the reason it was proposed, the billing SOP check, the exact fields that change (now → after), the website and the CRM side by side with differences highlighted, and the match signals. Approve or reject with an optional comment; the app then opens the next pending proposal.
 - **Change history** (every field written through the API) and **Pipeline runs**.
 
-Every approval asks "Write this to the live sandbox?" and shows the exact change first. "View in Meridian ↗" links open the CRM browser. They go through the app, so the token is never in the page, but it is in the CRM browser's own address bar: keep that out of shared screen recordings. The design is in `docs/review-app-design.md`.
+Every approval asks "Write this to the live sandbox?" and shows the exact change first. "View in Meridian ↗" links open the CRM browser. They go through the app, so the token is never in the page, but it is in the CRM browser's own address bar: don't share that address. The design is in `docs/review-app-design.md`.
 
 ## End-state check
 

@@ -1,6 +1,6 @@
 # Review app design: CRM Review App
 
-The review app is where a person approves or rejects each fix the pipeline proposes. Only approved fixes are written to the graded sandbox. It looks like the Meridian CRM (the sandbox's read-only front end), so reviewing about 29 proposals, recording the demo, and showing an approved change landing in the CRM are all quick and obvious.
+The review app is where a person approves or rejects each fix the pipeline proposes. Only approved fixes are written to the graded sandbox. It looks like the Meridian CRM (the sandbox's read-only front end), so reviewing about 29 proposals and showing an approved change landing in the CRM are both quick and obvious.
 
 This describes the app as it is now. The code in `crm_review_app/web/` is the reference.
 

@@ -2,14 +2,14 @@
 
 The pipeline scrapes every Bellhaven community from the website, matches each one to the CRM, proposes fixes, and writes only reviewer-approved fixes back through the CRM API. This runbook holds what isn't in the code: the background from exploring the site and API, the decisions, how the pieces fit, and the steps still to do. **The code is the reference for how anything works.**
 
-**Status (2026-11-25):** built on branch `bellhaven-pipeline`: the pipeline, the audit and the Meridian-style review app. It was tested against a local mock CRM and a suite of 207 automated tests during the build; both were removed afterwards to keep the repo lean, and git history still has them. Step 1 (the live, read-only pipeline run) is done: it found the 29 proposals expected, and a second run proposed nothing new. Since then, care types follow every offering the website lists (decision #4), which adds a care type change for Findlay and Erie, and Administrator contacts are now checked against the website, which adds 9 Administrator contact changes. The website's phone number now also replaces a different one in the CRM (decision #3), which adds a phone change to 10 updates and 5 phone-only updates. Each account now has one review: its Administrator contact change is part of its Update, which leaves 38 proposals. Nothing has been written to the live sandbox yet. Still to do: the review and demo, and the final check (Steps 2–3 below).
+**Status (2026-11-25):** built on branch `bellhaven-pipeline`: the pipeline, the audit and the Meridian-style review app. It was tested against a local mock CRM and a suite of 207 automated tests during the build; both were removed afterwards to keep the repo lean, and git history still has them. Step 1 (the live, read-only pipeline run) is done: it found the 29 proposals expected, and a second run proposed nothing new. Since then, care types follow every offering the website lists (decision #4), which adds a care type change for Findlay and Erie, and Administrator contacts are now checked against the website, which adds 9 Administrator contact changes. The website's phone number now also replaces a different one in the CRM (decision #3), which adds a phone change to 10 updates and 5 phone-only updates. Each account now has one review: its Administrator contact change is part of its Update, which leaves 38 proposals. Nothing has been written to the live sandbox yet. Still to do: the review, and the final check (Steps 2–3 below).
 
 ## Rules for the live phase
 
 1. Nothing writes to the live sandbox except your own approvals in the review app. Never send a test POST: every POST creates a real, graded account, and there is no delete.
 2. Don't run the pipeline while you're approving.
 3. If an ownership change (CHOW) reports an error, press Retry on it before running the pipeline again.
-4. The CRM browser's address contains your API token, and anyone with the token can change your graded sandbox through the API. Keep that tab's address bar out of the shared recording.
+4. The CRM browser's address contains your API token, and anyone with the token can change your graded sandbox through the API. Keep that tab's address bar to yourself.
 5. Never commit `.env` or `data/`: they hold the token and the CRM's data. Keep the exercise brief out of the repo too, because it contains the token.
 
 ## Background (from exploring the site and API on 2026-11-24)
@@ -114,18 +114,16 @@ python -c "from crm_review_app import store; from crm_review_app.config import D
 
 - [x] **Run it a second time:** `python -m crm_review_app.pipeline`. Expected: `"new": 0, "already_known": 38`.
 
-## Step 2: Review the queue and record the demo
+## Step 2: Review the queue
 
 - [ ] **Make the first live write carefully.** Nothing has written to the real API yet, so confirm its exact write format on one low-risk change first.
   - Run `python -m crm_review_app.web`, open http://localhost:8000, and check the badge says **LIVE SANDBOX**.
   - Approve only **Update Bellhaven of Portsmouth** (zip 45626 → 45662). The app asks "Write this to the live sandbox?" and shows the exact change: check it, then press **Write to live CRM**.
   - Check that the green banner says "The CRM stored exactly what was sent", and that "View in Meridian ↗" shows the new zip. If anything was stored differently, or you get an error, stop and fix `crm.py`/`apply.py` before approving anything else.
-  - Then make the first create and the first CHOW the same way, one at a time, before going faster. Use Batavia and Marietta, and leave Tiffin and Lima pending: the demo shows them. For a CHOW, the banner lists any field the CRM stored differently on the new account or the old account's link; there should be none.
+  - Then make the first create and the first CHOW the same way, one at a time, before going faster. Use Batavia and Marietta, and leave Tiffin and Lima pending. For a CHOW, the banner lists any field the CRM stored differently on the new account or the old account's link; there should be none.
   - Do the same for the first update with an Administrator contact change, best a contact-only one (Wooster, Saline or Meadville): no contact has been written to this CRM before. A replacement adds the new contact first, then makes the old one inactive; if a step fails, press Retry (what landed is not written again, and the new contact is reused). Check the account's page in Meridian lists the new administrator.
   - Do the same for the first phone-only update (for example Goshen): no phone has been written to this CRM before. If the write is refused, stop before approving any other update with a phone change. Numbers are compared by their digits, so a CRM that only reformats them is fine.
   - Do the same for the first two-type care value (Erie or Findlay: "Assisted Living; Memory Care"): no such value has been written to this CRM before. If the banner shows the CRM stored it differently, or the write is refused, stop and switch decision #4 back to a single value before approving the other one.
-- [ ] **Start a screen recorder** (Loom, or any free recorder), with the app still open.
-- [ ] **Record about 2½ minutes:** the queue, the Tiffin change of ownership and its billing SOP box, approving Lima, rejecting one proposal, the change in Meridian, and the change history. Keep the Meridian tab's address bar out of the recording (full screen, or crop it): it contains the token.
 - [ ] **Work through the rest of the queue.** Read every proposal's evidence before approving. A queue with unapproved proposals scores the same as doing nothing.
 - [ ] **Check the Failed tab.** For a stale failure, re-run the pipeline and review again. For an API error, read the error saved on the proposal, fix the code, and approve again. If you reject one by mistake, put it back in the queue with the command below, using the key at the end of its page's address (`/proposals/<key>`):
 
@@ -134,11 +132,10 @@ python -c "import sys; from crm_review_app import store; from crm_review_app.con
 ```
 
 - [ ] **Run the pipeline again:** `python -m crm_review_app.pipeline`. Expected: `"new": 0`, and the app shows 0 pending.
-- [ ] **Share the recording** so anyone with the link can view it, and save the link for the submission form.
 
 ## Step 3: Final check and submit
 
 - [ ] `python -m crm_review_app.pipeline`: expect `"new": 0`.
 - [ ] `python -m crm_review_app.audit --before data\snapshot\crm.json` against the live sandbox (read-only): expect `OK`, or only `still proposed` lines for proposals you rejected on purpose. Investigate any other `PROBLEM` line.
 - [ ] `git status`: `.env` and `data/` are not tracked. `git grep -E "bh_[A-Za-z0-9_-]{16,}"` finds nothing (no token in tracked files).
-- [ ] Push to the repository you'll submit (private, or as the form asks). Paste the repo link and the demo link into the submission form.
+- [ ] Push to the repository you'll submit (private, or as the form asks). Paste the repo link into the submission form.
