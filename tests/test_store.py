@@ -81,3 +81,46 @@ def test_change_log_keeps_only_fields_that_changed():
                       old={"name": "Old", "status": "Active"}, new={"name": "X", "status": "Active"})
     [row] = store.change_history(conn, account_id="A1")
     assert (row["field"], row["old_value"], row["new_value"], row["title"]) == ("name", "Old", "X", "Update X")
+
+
+
+
+def test_superseded_proposal_that_comes_back_is_reopened():
+    conn = store.connect(":memory:")
+    p = proposal()
+    store.add_proposals(conn, store.start_run(conn), [p])
+    store.supersede_missing(conn, [])
+    store.add_proposals(conn, store.start_run(conn), [p])
+    assert store.get(conn, p.key)["status"] == "pending"
+
+
+def test_approval_made_while_a_run_reads_the_crm_is_kept():
+    conn = store.connect(":memory:")
+    p = proposal()
+    store.add_proposals(conn, store.start_run(conn), [p])
+    run = store.start_run(conn)                                         # the next run starts reading the CRM...
+    store.set_status(conn, p.key, "applied", None, {"updated": "A1"})  # ...the reviewer approves meanwhile...
+    store.add_proposals(conn, run, [p])                                # ...and the run's older snapshot has it
+    assert store.get(conn, p.key)["status"] == "applied"
+
+
+def test_supersede_leaves_decided_proposals_alone():
+    conn = store.connect(":memory:")
+    run = store.start_run(conn)
+    applied, rejected, pending = proposal(), proposal(account_id="A2"), proposal(account_id="A3")
+    store.add_proposals(conn, run, [applied, rejected, pending])
+    store.set_status(conn, applied.key, "applied")
+    store.set_status(conn, rejected.key, "rejected")
+    assert store.supersede_missing(conn, []) == 1
+    assert [store.get(conn, p.key)["status"] for p in (applied, rejected, pending)] == ["applied", "rejected",
+                                                                                          "superseded"]
+
+
+def test_failed_batch_leaves_nothing_behind():
+    conn = store.connect(":memory:")
+    run = store.start_run(conn)
+    good, broken = proposal(), proposal(account_id="A2", evidence={"bad": object()})  # not JSON-serialisable
+    with pytest.raises(TypeError):
+        store.add_proposals(conn, run, [good, broken])
+    assert not conn.in_transaction
+    assert conn.execute("SELECT COUNT(*) FROM proposals").fetchone()[0] == 0
