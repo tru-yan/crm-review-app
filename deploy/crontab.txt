@@ -1,0 +1,4 @@
+# Bellhaven CRM pipeline: every day at 06:00 server time.
+# It only scrapes, reads the CRM and stores proposals. Nothing is written to the CRM until a reviewer approves it.
+# Safe to re-run: proposals that were already approved or rejected are never proposed again.
+0 6 * * * cd /opt/bellhaven && mkdir -p logs && .venv/bin/python -m bellhaven.pipeline >> logs/pipeline.log 2>&1
