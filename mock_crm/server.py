@@ -1,6 +1,6 @@
 """Local stand-in for the CRM sandbox API, so the whole flow can be tested without touching the graded sandbox.
 
-Run:  $env:BH_MOCK_SEED = "data\snapshot\crm.json"; uvicorn mock_crm.server:build --factory --port 8001
+Run:  $env:BH_MOCK_SEED = "data\\snapshot\\crm.json"; uvicorn mock_crm.server:build --factory --port 8001
 State is kept in memory: restart the server to reset it. It is deliberately stricter than the real API.
 """
 import copy
