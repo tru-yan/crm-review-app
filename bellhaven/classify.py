@@ -216,7 +216,8 @@ def _not_on_website(accounts, bh: str, seen: set, skip: set, today: str) -> list
                            "chow_current_account).")
         changes = {"status": NOT_ON_WEBSITE_STATUS, "note": _note(a["note"], text, today)}
         out.append(Proposal("not_on_website", f"Not on website: {a['name']}", a["account_id"], "", changes,
-                            {k: a.get(k) for k in changes}, _evidence(None, None, a, reasons)))
+                            {k: a.get(k) for k in changes} | {"parent_id": a["parent_id"]},
+                            _evidence(None, None, a, reasons)))
     return out
 
 

@@ -177,6 +177,14 @@ def set_status(conn, key: str, status: str, comment: str | None = None, result: 
                      (status, _now(), comment, json.dumps(result) if result is not None else None, key))
 
 
+def claim(conn, key: str) -> bool:
+    """Mark a pending or failed proposal as being applied. False if it was already claimed or decided."""
+    with conn:
+        cur = conn.execute("UPDATE proposals SET status='applying', decided_at=?"
+                           " WHERE key=? AND status IN ('pending', 'failed')", (_now(), key))
+    return cur.rowcount == 1
+
+
 def log_call(conn, key: str, method: str, path: str, body: dict, response: dict) -> int:
     with conn:
         cur = conn.execute("INSERT INTO api_log (proposal_key, method, path, body, response, at) VALUES (?,?,?,?,?,?)",

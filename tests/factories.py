@@ -63,12 +63,15 @@ class FakeCrm:
 
     def create_account(self, body):
         self._next_id += 1
-        record = make_account(**body, account_id=f"NEW{self._next_id}", created_by_candidate=True)
+        record = {f: "" for f in make_account()} | {"status": "Active", "lifetime_revenue": 0, "outstanding_ar": 0}
+        record |= dict(body)
+        record |= {"account_id": f"NEW{self._next_id}", "created_by_candidate": True,
+                   "parent_name": PARENT_NAMES.get(record["parent_id"], ""), "updated_at": "2026-11-25 00:00:00Z"}
         self.accounts[record["account_id"]] = record
-        self.writes.append(("POST", body))
+        self.writes.append(("POST", dict(body)))
         return dict(record)
 
     def update_account(self, account_id, body):
         self.accounts[account_id].update(body)
-        self.writes.append(("PATCH", account_id, body))
+        self.writes.append(("PATCH", account_id, dict(body)))
         return dict(self.accounts[account_id])
