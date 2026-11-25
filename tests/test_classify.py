@@ -107,3 +107,23 @@ def test_keys_do_not_depend_on_the_date():
     k1 = build_proposals([loc], parent_accounts() + [acct], [], "2026-11-25")[0].key
     k2 = build_proposals([loc], parent_accounts() + [acct], [], "2026-11-26")[0].key
     assert k1 == k2
+
+
+def test_reparenting_rechecks_billing_before_writing():
+    [p] = run([make_location()], [make_account(parent_id=HARBORVIEW, lifetime_revenue=47000, outstanding_ar=0)])
+    assert p.before["lifetime_revenue"] == 47000 and p.before["outstanding_ar"] == 0
+
+
+def test_chow_with_a_bellhaven_copy_is_flagged_for_joint_review():
+    accounts = [make_account(account_id="A1", parent_id=CEDAR, lifetime_revenue=84000, outstanding_ar=12400),
+                make_account(account_id="A2")]
+    ps = run([make_location()], accounts, [admin("A2")])
+    assert sorted(p.kind for p in ps) == ["chow", "duplicate"]
+    assert all(p.confidence == "low" for p in ps)
+
+
+def test_weak_match_next_to_a_strong_one_is_not_hidden():
+    other = make_account(account_id="A2", name="Gardens Senior Care", billing_street="900 Other Rd",
+                         phone="(614) 555-0900")
+    [p] = run([make_location()], [make_account(), other], [admin("A2")])
+    assert p.kind == "not_on_website" and p.account_id == "A2"

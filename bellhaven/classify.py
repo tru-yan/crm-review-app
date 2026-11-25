@@ -136,6 +136,7 @@ def _survivor_proposals(loc: Location, m: Match, bh: str, today: str) -> list[Pr
             f"Parent is '{a['parent_name'] or 'none'}' but the website lists it as Bellhaven. It has lifetime revenue "
             f"{a['lifetime_revenue']} and outstanding AR {a['outstanding_ar']}, so the billing SOP applies: leave this "
             "account as it is, create a new account under Bellhaven and point chow_current_account at it.")
+        reasons.append("The new account takes the website's name and address; the old account keeps its current values.")
         new = _new_account(loc, bh, _note("", f"New account after change of ownership; old account {a['account_id']} "
                                               "kept for billing.", today, loc.url))
         return [Proposal("chow", f"Change of ownership: {loc.name}", a["account_id"], loc.slug, {"new_account": new},
@@ -149,6 +150,9 @@ def _survivor_proposals(loc: Location, m: Match, bh: str, today: str) -> list[Pr
         return []
     changes["note"] = _note(a["note"], f"Updated {', '.join(changes)} to match the Bellhaven website.", today, loc.url)
     before = {k: a.get(k) for k in changes}
+    if "parent_id" in changes:
+        # re-checked before writing: if billing changed since, the SOP decision may no longer hold
+        before.update(lifetime_revenue=a.get("lifetime_revenue"), outstanding_ar=a.get("outstanding_ar"))
     return [Proposal("update", f"Update {a['name']}", a["account_id"], loc.slug, changes, before,
                      _evidence(loc, m, a, reasons))]
 
@@ -198,7 +202,7 @@ def _not_on_website(accounts, bh: str, seen: set, skip: set, today: str) -> list
         reasons = ["Under the Bellhaven parent but not listed anywhere on the Bellhaven website."]
         text = "Not listed on the Bellhaven website; closed or sold, new owner unknown."
         # Decision #2: flag for review, never link or merge automatically. The CRM alone can't prove who owns it now.
-        twin = next((b for b in accounts if b["account_id"] != a["account_id"] and b["parent_id"] not in ("", bh)
+        twin = next((b for b in accounts if b["account_id"] != a["account_id"] and b.get("parent_id") and b["parent_id"] != bh
                      and b["account_id"] not in skip and _same_address(a, b)), None)
         if twin:
             reasons.append(f"'{twin['name']}' ({twin['account_id']}) is at the same address under "
@@ -227,13 +231,21 @@ def build_proposals(locations, accounts, contacts, today: str) -> list[Proposal]
     proposals, seen = [], set()
     for loc in locations:
         found = matches[loc.slug]
-        seen |= {m.account["account_id"] for m in found}
         strong = [m for m in found if m.score >= MATCH_THRESHOLD]
         weak = [m for m in found if m.score < MATCH_THRESHOLD]
+        seen |= {m.account["account_id"] for m in strong}
         if not strong:
+            seen |= {m.account["account_id"] for m in weak}  # shown as candidates on the create proposal
             proposals.append(_create(loc, bh, weak, today))
             continue
         survivor, why = choose_survivor(strong, bh)
-        proposals += _survivor_proposals(loc, survivor, bh, today)
-        proposals += [_duplicate(loc, m, survivor, why, today) for m in strong if m is not survivor]
+        group = _survivor_proposals(loc, survivor, bh, today)
+        group += [_duplicate(loc, m, survivor, why, today) for m in strong if m is not survivor]
+        if len(group) > 1 and any(p.kind == "chow" for p in group):
+            for p in group:
+                p.confidence = "low"
+                p.evidence["reasons"].append(
+                    "This community has both a change of ownership and duplicate copies: review these proposals "
+                    "together. If a copy is already under Bellhaven, linking to it may be better than a new account.")
+        proposals += group
     return proposals + _not_on_website(accounts, bh, seen, skip, today)
