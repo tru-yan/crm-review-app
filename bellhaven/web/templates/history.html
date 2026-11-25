@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Change history · Bellhaven review{% endblock %}
 {% block content %}
+{% import "_values.html" as val %}
 <h1>Change history</h1>
 <p class="muted">Every field changed through the API, newest first.</p>
 <form class="searchrow" method="get" action="/history">
@@ -14,7 +15,6 @@
   <thead><tr><th>When</th><th>Account</th><th>Action</th><th>Field</th><th>Before → After</th><th>Comment</th></tr></thead>
   <tbody>
   {% for e in entries %}
-  {% set old = show(e.field, e.old_value, names) %}{% set new = show(e.field, e.new_value, names) %}
   <tr>
     <td class="nowrap">{{ when(e.changed_at) }}</td>
     <td><a href="/proposals/{{ e.proposal_key }}">{{ e.account_name }}</a>
@@ -23,8 +23,8 @@
     <td>{{ e.action }}</td>
     <td>{{ field_label(e.field) }}</td>
     <td class="wrapcell">
-      {%- if e.action == 'update' %}{% if old is none %}<span class="emptyval">empty</span>{% else %}<s>{{ old }}</s>{% endif %} → {% endif -%}
-      {%- if new is none %}<span class="emptyval">empty</span>{% else %}<span class="after">{{ new }}</span>{% endif %}</td>
+      {%- if e.action == 'update' %}{{ val.before(show(e.field, e.old_value, names)) }} → {% endif -%}
+      {{ val.after(show(e.field, e.new_value, names)) }}</td>
     <td>{{ e.reviewer_comment or '' }}</td>
   </tr>
   {% endfor %}

@@ -1,6 +1,6 @@
 # Review app redesign: Meridian-style FastAPI app
 
-Status: approved design, 2026-11-24. It replaces the Streamlit `review_app.py`.
+Status: approved 2026-11-24 and built; it replaced the Streamlit `review_app.py`. Reviews during the build tightened a few details (for example, Meridian links now go through the app so the token never appears in a page, and `R` asks first on live). `runbook.md` summarises the review app's safety behaviour as built, and the code is the reference.
 
 ## Goal
 

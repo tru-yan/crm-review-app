@@ -7,13 +7,13 @@ import threading
 from pathlib import Path
 from urllib.parse import quote, urlencode, urlsplit
 
-from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.exceptions import HTTPException as StarletteHTTPException
-from starlette.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader
+from starlette.exceptions import HTTPException  # the base class, so the handler below also catches routing 404s
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .. import config, store
 from ..crm import CrmClient
@@ -69,7 +69,8 @@ def create_app(conn, client, live: bool, meridian_base: str | None, allowed_orig
         return present.banner(p, outcome, names) if p else None
 
     def not_found(request: Request, key: str):
-        return page(request, "notfound.html", 404, key=key, nav="queue")
+        return page(request, "error.html", 404, heading="Proposal not found", nav="queue",
+                    message=f"There is no proposal with the key {key}.")
 
     def check_post(request: Request, token: str) -> None:
         sent = request.headers.get("origin")
@@ -87,8 +88,8 @@ def create_app(conn, client, live: bool, meridian_base: str | None, allowed_orig
         path = f"/proposals/{target}" if target else "/queue"
         return RedirectResponse(f"{path}?{urlencode({'last': key, 'outcome': outcome})}", status_code=303)
 
-    @app.exception_handler(StarletteHTTPException)
-    def refused(request: Request, exc: StarletteHTTPException):
+    @app.exception_handler(HTTPException)
+    def refused(request: Request, exc: HTTPException):
         """403, 404 and 405 as a page with a way back, not raw JSON (an app restart makes open forms stale)."""
         with lock:
             response = page(request, "error.html", exc.status_code, message=exc.detail)

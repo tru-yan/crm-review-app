@@ -125,8 +125,8 @@ def apply_proposal(conn, client, row) -> dict:
         raise ValueError(f"unknown proposal kind {kind!r}")
     if not store.claim(conn, key):
         status = (store.get(conn, key) or {"status": "missing"})["status"]
-        hint = (": wait for it to finish; if it stays stuck, re-run the pipeline 10 or more minutes from now"
-                if status == "applying" else "")
+        hint = (f": wait for it to finish; if it stays stuck, re-run the pipeline {store.STUCK_MINUTES} or more "
+                "minutes from now" if status == "applying" else "")
         raise AlreadyHandled(f"'{row['title']}' is {status}, not pending or failed{hint}")
     row = store.get(conn, key)  # the latest stored version: a pipeline run may have refreshed it since
     changes, before = json.loads(row["changes"]), json.loads(row["before"])

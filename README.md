@@ -55,6 +55,11 @@ $env:BH_API_BASE = "http://localhost:8001/api/v1"; $env:BH_DB_PATH = "data\test.
 
 Each database is tied to the CRM it was first used with, so test decisions can't leak into the live run. The app's top bar shows a green **Mock CRM** badge for the mock and a red **LIVE SANDBOX** badge for the graded copy. `python -m bellhaven.audit --before data\snapshot\crm.json` checks the end state of whichever CRM is configured (read-only).
 
+## Docs
+
+- `docs/runbook.md`: what exploring the site and API found, the decisions, how the pieces fit, and the remaining live-phase steps.
+- `docs/review-app-design.md`: the review app's design.
+
 ## Schedule
 
 `deploy/crontab.txt` runs the pipeline daily at 06:00. Edit the path in it to your checkout; the token comes from the `.env` file there. Re-runs are safe:

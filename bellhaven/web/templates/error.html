@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}Not done · Bellhaven review{% endblock %}
+{% block title %}{{ heading or "Not done" }} · Bellhaven review{% endblock %}
 {% block content %}
-<h1>That didn't go through</h1>
+<h1>{{ heading or "That didn't go through" }}</h1>
 <p class="muted">{{ message }}</p>
-<p><a href="/queue">Back to the queue</a>. Reload any page that was open before trying again.</p>
+<p><a href="/queue">Back to the queue</a>{% if not heading %}. Reload any page that was open before trying again.{% endif %}</p>
 {% endblock %}

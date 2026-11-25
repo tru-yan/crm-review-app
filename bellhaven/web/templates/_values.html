@@ -1,0 +1,7 @@
+{# How a field value reads in every table: "new" or "empty" tags, the old value struck through, the new one in green. #}
+{% macro before(value, new=false) -%}
+{%- if new %}<span class="newtag">new</span>{% elif value is none %}<span class="emptyval">empty</span>{% else %}<s>{{ value }}</s>{% endif -%}
+{%- endmacro %}
+{% macro after(value) -%}
+{%- if value is none %}<span class="emptyval">empty</span>{% else %}<span class="after">{{ value }}</span>{% endif -%}
+{%- endmacro %}

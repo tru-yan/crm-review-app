@@ -4,6 +4,7 @@ __pycache__/
 .env
 data/
 logs/
+brief/
 image (*).png
 *.docx
 .claude/
