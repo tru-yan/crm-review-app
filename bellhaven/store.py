@@ -140,7 +140,7 @@ def add_proposals(conn, run_id: int, proposals) -> tuple[int, int]:
             conn.execute(
                 "UPDATE proposals SET changes=?, before=?, evidence=?, confidence=?, run_id=?, status='pending'"
                 " WHERE key=? AND (status IN ('pending', 'failed', 'superseded')"
-                " OR (status IN ('applied', 'applying') AND decided_at <= ?))",
+                " OR (status IN ('applied', 'applying') AND decided_at < ?))",
                 (*values, p.key, started_at))
     return new, known
 
