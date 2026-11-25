@@ -10,6 +10,67 @@
 
 ---
 
+## Changes made during the build (2026-11-24)
+
+Each task was built from this plan, then reviewed twice: once against the spec, once for code quality. Review fixes and one final whole-branch review changed the code below. **Where the code on branch `bellhaven-pipeline` differs from a code block in this plan, the code is authoritative.** The suite has 146 tests.
+
+- **Task 1, normalize:**
+  - Phone extensions are ignored.
+  - Periods are removed rather than turned into spaces ("N.W." → "nw").
+- **Task 2, scrape and config:**
+  - The scrape fails closed if the "N communities listed" text is missing or the directory is empty. Parse errors name the page.
+  - `.env` parsing handles a byte-order mark, quotes and `export`.
+  - `USING_MOCK` is true only for local hosts (`is_mock_crm`). `is_graded_crm` compares hosts and ignores a trailing dot.
+- **Task 3, crm:**
+  - Network and non-JSON errors become `CrmError`.
+  - Paging has a shape check, a loop guard and a final count check.
+  - Writes are never retried.
+- **Task 4, sop:** NaN or unreadable billing values count as "money involved". Whitespace counts as blank.
+- **Task 6, classify:**
+  - A direct re-parent stores the billing values in `before`, so the SOP is re-checked at write time.
+  - A CHOW that comes with duplicates is low-confidence: review them together.
+  - Weak matches beside a strong one are no longer hidden.
+  - not_on_website `before` includes `parent_id`.
+  - An unlinked CHOW's own new account is never proposed as a duplicate.
+- **Task 7, store:**
+  - Every write is a single transaction. WAL mode, and a 30 s lock timeout.
+  - The status conditions are inside each UPDATE, so the app's decisions are never overwritten.
+  - Superseded proposals reopen when produced again. Applied ones reopen only if decided before the run started.
+  - A proposal still "applying" reopens only if it was claimed 10 minutes before the run started.
+  - Failed proposals with a logged write are never superseded.
+  - New functions: `claim()` and a guarded `reject()`. Timestamps are in microseconds and strictly increasing.
+- **Task 8, apply:**
+  - An atomic claim (`AlreadyHandled` on a double click), then a re-read of the stored row.
+  - Rule re-checks:
+    - a CHOW requires revenue and AR
+    - nothing is written to an already-resolved account
+    - a duplicate's survivor must be live
+  - Create-once uses our own API log first, then a strict name + street + zip search.
+  - "Already applied" detection for a lost response.
+  - Failures are logged, and a CHOW that fails after its create says "Retry it now, before the next pipeline run".
+- **Task 9, pipeline:** the stats include `contacts`. There is a test that a failed read changes nothing.
+- **Task 10, mock and snapshot:**
+  - The mock rejects wrong types, blank names, empty PATCHes, self-references, unknown filters and malformed JSON.
+  - The snapshot refuses unless it reads the graded host, refuses a CRM that already holds our writes, and writes atomically.
+- **Task 11, audit:**
+  - A CHOW old account must be unchanged except for the link.
+  - Duplicate and CHOW links must point to live accounts.
+  - Collateral damage is flagged: fields this tool never edits, or an account set Inactive without a duplicate link. So is an account created twice.
+  - `main()` returns the exit code.
+- **Task 12, app:**
+  - The app doesn't set "applying" itself (apply claims the proposal).
+  - Reject is guarded.
+  - Failed proposals show their last error, and "applying" rows are explained.
+- **Task 13, docs:** accurate re-run wording, the two-terminal mock setup, and a schtasks command with a log file.
+- **Known limitations, for the writeup:**
+  - Partially approving a CHOW-with-duplicates group.
+  - A CHOW whose link response is lost ends "stale" (the CRM is correct, but the proposal is never marked applied).
+  - Linking to an existing Bellhaven copy instead of creating a new account was deferred.
+
+**Two rules for the live review (Tasks 15–16):**
+1. Don't run the pipeline while you're approving.
+2. If an ownership change (CHOW) reports an error, press Retry on it before running the pipeline again.
+
 ## Background (read this first)
 
 The brief is in `Bellhaven_CRM_Exercise.docx` in the repo root. Here is what exploring the site and the API turned up on 2026-11-24:
@@ -1494,6 +1555,16 @@ def test_failed_proposal_is_refreshed_and_back_in_the_queue():
     assert row["status"] == "pending" and json.loads(row["before"])["name"] == "Changed"
 
 
+def test_applied_proposal_that_comes_back_is_reopened():
+    # after a correct apply the next run no longer produces it; producing it again means the CRM changed back
+    conn = store.connect(":memory:")
+    p = proposal()
+    store.add_proposals(conn, store.start_run(conn), [p])
+    store.set_status(conn, p.key, "applied", None, {"updated": "A1"})
+    assert store.add_proposals(conn, store.start_run(conn), [p]) == (0, 1)
+    assert store.get(conn, p.key)["status"] == "pending"
+
+
 def test_undecided_proposal_that_disappears_is_superseded():
     conn = store.connect(":memory:")
     p = proposal()
@@ -1605,6 +1676,7 @@ FROM change_log c JOIN proposals p ON p.key = c.proposal_key
 ORDER BY c.id;
 """
 UNDECIDED = ("pending", "failed")
+REOPENABLE = UNDECIDED + ("applied",)  # produced again after being applied = the CRM changed back
 
 
 def _now() -> str:
@@ -1644,9 +1716,10 @@ def finish_run(conn, run_id: int, stats: dict) -> None:
 
 
 def add_proposals(conn, run_id: int, proposals) -> tuple[int, int]:
-    """Insert new proposals. Decided ones (applied/rejected) are never touched again. Undecided ones are
-    refreshed with today's CRM values, so the freshness check before writing uses current data.
-    Returns (new, already_known)."""
+    """Insert new proposals. Rejected ones are never touched again. Undecided ones are refreshed with today's
+    CRM values, so the freshness check before writing uses current data. An applied one that is produced again
+    goes back to pending: after a correct apply the next run no longer produces it, so seeing it again means the
+    CRM changed back. Returns (new, already_known)."""
     new = known = 0
     for p in proposals:
         values = (json.dumps(p.changes), json.dumps(p.before), json.dumps(p.evidence), p.confidence, run_id)
@@ -1659,7 +1732,7 @@ def add_proposals(conn, run_id: int, proposals) -> tuple[int, int]:
             new += 1
             continue
         known += 1
-        if row["status"] in UNDECIDED:
+        if row["status"] in REOPENABLE:
             conn.execute("UPDATE proposals SET changes=?, before=?, evidence=?, confidence=?, run_id=?,"
                          " status='pending' WHERE key=?", (*values, p.key))
     conn.commit()
@@ -1734,7 +1807,7 @@ def counts(conn) -> dict:
 - [ ] **Step 4: Run the tests to check they pass**
 
 Run: `python -m pytest tests/test_store.py -q`
-Expected: 7 passed
+Expected: 8 passed
 
 - [ ] **Step 5: Commit**
 
@@ -2483,7 +2556,7 @@ import json
 import streamlit as st
 
 from bellhaven import store
-from bellhaven.apply import StaleProposal, apply_proposal
+from bellhaven.apply import AlreadyHandled, StaleProposal, apply_proposal
 from bellhaven.config import API_BASE, DB_PATH, USING_MOCK
 from bellhaven.crm import CrmClient
 
@@ -2516,13 +2589,15 @@ def decide(conn, client, row, approve: bool, comment: str) -> None:
         store.set_status(conn, row["key"], "rejected", comment)
         st.session_state.flash = ("info", f"Rejected: {row['title']}")
         return
-    store.set_status(conn, row["key"], "applying", comment)
     try:
-        result = apply_proposal(conn, client, row)
+        result = apply_proposal(conn, client, row)  # it claims the proposal first, so a second click can't write twice
+    except AlreadyHandled as e:
+        st.session_state.flash = ("warning", str(e))
+        return
     except StaleProposal as e:
-        store.set_status(conn, row["key"], "failed", comment, {"stale": e.args[0]})
+        store.set_status(conn, row["key"], "failed", comment, {"stale": str(e)})
         st.session_state.flash = ("error", f"Not written: the CRM record changed since this proposal was made. "
-                                           f"Re-run the pipeline. {e.args[0]}")
+                                           f"Re-run the pipeline. {e}")
         return
     except Exception as e:  # show any API error to the reviewer and keep it on the proposal
         store.set_status(conn, row["key"], "failed", comment, {"error": str(e)})
@@ -2799,7 +2874,7 @@ Expected: `"new": 0, "already_known": 29`
 
 ### Task 16: Review the queue and record the demo
 
-- [ ] **Step 0: Make the first live write carefully.** The mock can't confirm the real API's exact write format, so test it on one low-risk change first. Run `streamlit run review_app.py` and check the banner is **red (LIVE SANDBOX)**. Approve only **Update Bellhaven of Portsmouth** (zip 45626 → 45662). Check that the success message shows `'mismatches': {}`, and that the CRM browser shows the new zip. If the mismatches aren't empty or you get an error, stop: fix `crm.py`/`apply.py` (with a test) before approving anything else. Then make the first create and the first CHOW the same way, one at a time, before going faster.
+- [ ] **Step 0: Make the first live write carefully.** The mock can't confirm the real API's exact write format, so test it on one low-risk change first. Run `streamlit run review_app.py` and check the banner is **red (LIVE SANDBOX)**. Approve only **Update Bellhaven of Portsmouth** (zip 45626 → 45662). Check that the success message shows `'mismatches': {}`, and that the CRM browser shows the new zip. If the mismatches aren't empty or you get an error, stop: fix `crm.py`/`apply.py` (with a test) before approving anything else. Then make the first create and the first CHOW the same way, one at a time, before going faster. A CHOW's result has two mismatch lists, `{'new_account': {}, 'link': {}}`; both should be empty. Don't run the pipeline while approving, and if a CHOW reports an error, press Retry on it before the next pipeline run.
 - [ ] **Step 1: Start a screen recorder** (Loom, or any free recorder), with the app still open.
 - [ ] **Step 2: Record about 2 minutes.**
   - Open the Tiffin CHOW proposal and explain the billing SOP box.
@@ -2847,7 +2922,7 @@ git commit -m "docs: writeup"
 - [ ] **Step 1:** `python -m pytest -q`. All pass.
 - [ ] **Step 2:** `python -m bellhaven.pipeline`. Expect `"new": 0`.
 - [ ] **Step 2b:** `python -m bellhaven.audit --before data\snapshot\crm.json` against the live sandbox (read-only). Expect `OK`, or only `still proposed` lines for proposals you rejected on purpose. Investigate any other `PROBLEM` line.
-- [ ] **Step 3:** Run `git status` and confirm that `.env`, `data/`, the screenshots and the `.docx` are not tracked. Run `git grep bh_` and confirm it finds nothing.
+- [ ] **Step 3:** Run `git status` and confirm that `.env`, `data/`, the screenshots and the `.docx` are not tracked. Run `git grep -E "bh_[A-Za-z0-9]{16,}"` and confirm it finds nothing (no token in tracked files).
 - [ ] **Step 4:** Push to the repository you'll submit (private, or as the form asks). Paste the repo link and the demo link into the submission form.
 
 ---
