@@ -6,12 +6,13 @@ from bellhaven.web.app import build, create_app
 from tests.review_fixtures import by_kind, make_queue
 
 MERIDIAN = "https://crm.test/crm/tok_secret"
+LOCAL = "http://127.0.0.1:8000"  # the only host names the app serves are this machine's
 
 
 def client_for(live=False):
     crm, conn = make_queue()
     app = create_app(conn, crm, live=live, meridian_base=MERIDIAN if live else None)
-    return TestClient(app), app, crm, conn
+    return TestClient(app, base_url=LOCAL), app, crm, conn
 
 
 def form(app, **values):
@@ -164,7 +165,12 @@ def test_environment_badge_and_meridian_links():
     assert "Mock CRM" in page and "LIVE SANDBOX" not in page and "/crm/" not in page
     live, app, crm, conn = client_for(live=True)
     page = live.get(f"/proposals/{by_kind(conn)['update']['key']}").text
-    assert "LIVE SANDBOX" in page and f'href="{MERIDIAN}/accounts/A1"' in page
+    assert "LIVE SANDBOX" in page and 'href="/meridian/accounts/A1"' in page
+    assert "tok_secret" not in page  # links go through the app, so hovering one never shows the token
+    r = live.get("/meridian/accounts/A1", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == f"{MERIDIAN}/accounts/A1"
+    assert live.get("/meridian/accounts", follow_redirects=False).headers["location"] == f"{MERIDIAN}/accounts"
+    assert mock.get("/meridian/accounts/A1").status_code == 404
 
 
 def test_the_token_never_appears_on_mock_pages(monkeypatch, tmp_path):
@@ -172,7 +178,7 @@ def test_the_token_never_appears_on_mock_pages(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "USING_MOCK", True)
     monkeypatch.setattr(config, "API_BASE", "http://localhost:8001/api/v1")
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "test.db")
-    http = TestClient(build())
+    http = TestClient(build(), base_url=LOCAL)
     for path in ("/queue", "/history", "/runs"):
         assert "tok_do_not_show" not in http.get(path).text
 
@@ -196,6 +202,7 @@ def test_refusals_are_pages_and_only_local_host_names_are_served():
     assert r.status_code == 403 and r.headers["content-type"].startswith("text/html") and "Reload the page" in r.text
     assert http.get("/no-such-page").status_code == 404
     assert http.get("/queue", headers={"Host": "evil.test:8000"}).status_code == 400  # DNS rebinding
+    assert http.get("/queue", headers={"Host": "testserver"}).status_code == 400
     headers = http.get("/queue").headers
     assert headers["x-frame-options"] == "DENY" and "frame-ancestors 'none'" in headers["content-security-policy"]
     assert crm.writes == []
@@ -203,6 +210,6 @@ def test_refusals_are_pages_and_only_local_host_names_are_served():
 
 def test_no_meridian_links_on_the_mock_even_if_a_base_is_given():
     crm, conn = make_queue()
-    http = TestClient(create_app(conn, crm, live=False, meridian_base=MERIDIAN))
+    http = TestClient(create_app(conn, crm, live=False, meridian_base=MERIDIAN), base_url=LOCAL)
     for path in ["/queue", "/history", "/runs"] + [f"/proposals/{p['key']}" for p in by_kind(conn).values()]:
         assert "tok_secret" not in http.get(path).text, path

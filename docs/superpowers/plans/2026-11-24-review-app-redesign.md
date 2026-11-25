@@ -12,6 +12,31 @@
 
 ---
 
+## Changes made during the build (2026-11-24)
+
+Each task was built from this plan, then reviewed twice: once against the spec, once for code quality. A final review covered the whole branch. Review fixes changed the code, so **where the code on branch `bellhaven-pipeline` differs from a code block in this plan, the code is authoritative.** The suite has 208 tests: this plan's 192, plus 16 added by the fixes.
+
+- **Task 3, present:**
+  - Account names come from the newest evidence (by `run_id`), so a renamed survivor shows its current name.
+  - A banner shows only when the stored status matches the outcome, so an old link never announces a write.
+  - States compare like the matching does. Negative amounts print as "-$500". The stuck-apply hint uses `store.STUCK_MINUTES`.
+- **Task 4, review:**
+  - `approve(conn, client, key, comment=None, *, live, confirmed=False)`: `live` is required and keyword-only, so it can't be swapped with `confirmed`.
+  - A database error never escapes: a new `error` outcome with a "Not saved" banner, also used when a failure can't be saved. Errors are logged.
+  - Tests for the claim race and the database-failure paths. `approve_all` passes `live=not USING_MOCK`.
+- **Task 5, app:**
+  - The live dialog's `confirmed` value is reset after it submits and can't be restored by Back (`autocomplete="off"`, and a reload when the page comes from the back/forward cache).
+  - Every POST form submits once. Only this machine's host names are served (against DNS rebinding), and pages can't be framed.
+  - HTTP errors are pages, not JSON. `PORT` is defined once. A test covers decided proposal pages.
+- **Final review:**
+  - Meridian links go through `/meridian/accounts/<id>` on the app, which redirects. The token never appears in a page, where hovering a link would show it on screen.
+  - "testserver" is no longer an allowed host; the tests use `http://127.0.0.1:8000`.
+  - The "Not saved" banner no longer claims every write is in the change history.
+  - The website-vs-CRM grid's CRM side is labelled "CRM when proposed".
+  - On live, the `R` shortcut asks before rejecting.
+  - The main plan's rehearsal (Task 14) runs the existing `approve_all` instead of rewriting it.
+- **Left for later:** a long pipeline error is shown in full on the runs page, and if recording a failed run itself fails, the run shows as "Running or interrupted" (the cron log still has the original error).
+
 ## Before you start
 
 - Work on branch `bellhaven-pipeline` in `C:\Users\463995\rt_pg\crm`, with the virtual environment active (`.\.venv\Scripts\Activate.ps1`). `python -m pytest -q` should report **147 passed** before Task 1.

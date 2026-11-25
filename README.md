@@ -35,7 +35,7 @@ python -c "from bellhaven import store; from bellhaven.config import DB_PATH; [p
 - **Proposal page:** why it was proposed, the billing SOP check, the exact fields that change (now → after), the website and the CRM side by side with differences highlighted, and the match signals. Approve or reject with an optional comment; the app then opens the next pending proposal. Shortcuts: `A` approve, `R` reject, `N` next pending, `Q` queue.
 - **Change history** (every field written through the API) and **Pipeline runs**.
 
-On the live sandbox, every approval asks "Write this to the live sandbox?" and shows the exact change first, and "View in Meridian ↗" links open the CRM browser. Those links contain your token, so keep the address bar out of shared screen recordings.
+On the live sandbox, every approval asks "Write this to the live sandbox?" and shows the exact change first, and "View in Meridian ↗" links open the CRM browser. They go through the app, so the token is never in the page, but it is in the CRM browser's own address bar: keep that out of shared screen recordings. On live, the `R` shortcut asks before rejecting, because a rejected proposal is never proposed again.
 
 ## Testing without touching the graded CRM
 

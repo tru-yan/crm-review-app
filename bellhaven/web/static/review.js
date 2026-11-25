@@ -59,6 +59,8 @@
       form.requestSubmit(document.getElementById("approve"));
     } else if (key === "r" && form) {
       event.preventDefault();
+      // live: one stray keystroke must not reject for good (a rejected proposal is never proposed again)
+      if (dialog && !window.confirm("Reject this proposal? It won't be proposed again.")) { return; }
       form.requestSubmit(document.getElementById("reject"));
     } else if (key === "n" && next) {
       window.location.href = next.href;

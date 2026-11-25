@@ -49,7 +49,7 @@
     {% else %}<div class="absent">Not on the website</div>{% endif %}
   </div>
   <div>
-    <div class="side">CRM now</div>
+    <div class="side">CRM when proposed</div>
     {% if side.crm %}
     <div class="detailgrid">
       {% for c in side.crm %}<div class="field{{ ' differs' if c.differs }}"><div class="lbl">{{ c.label }}</div><div class="val{{ ' alert' if c.alert }}">{{ c.value if c.value is not none else '—' }}</div></div>{% endfor %}

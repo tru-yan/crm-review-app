@@ -5,7 +5,7 @@ Only the two POST routes can change anything, and only through review.approve an
 import secrets
 import threading
 from pathlib import Path
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -22,7 +22,7 @@ from . import present, review
 HERE = Path(__file__).parent
 PORT = 8000
 DEFAULT_ORIGINS = (f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}")
-LOCAL_HOSTS = ["127.0.0.1", "localhost", "testserver"]  # testserver: FastAPI's TestClient
+LOCAL_HOSTS = ["127.0.0.1", "localhost"]  # the tests use base_url http://127.0.0.1:8000
 TABS = ("pending", "applied", "rejected", "failed", "superseded", "all")
 
 
@@ -44,16 +44,19 @@ def create_app(conn, client, live: bool, meridian_base: str | None, allowed_orig
         response.headers["X-Frame-Options"] = "DENY"  # no clickjacking: another site can't frame these pages
         response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
         return response
+
     meridian = meridian_base.rstrip("/") if live and meridian_base else None
 
     def meridian_url(account_id) -> str | None:
-        return f"{meridian}/accounts/{account_id}" if meridian and account_id else None
+        """A link to the account in the CRM browser, through /meridian here (which redirects). The CRM browser's
+        address holds the token, so it never appears in a page, where hovering a link would show it on screen."""
+        return f"/meridian/accounts/{quote(str(account_id), safe='')}" if meridian and account_id else None
 
     templates.env.globals.update(meridian_url=meridian_url, kind_label=present.kind_label,
                                  field_label=present.field_label, when=present.when, show=present.show)
 
     def page(request: Request, template: str, status_code: int = 200, /, **context):
-        context |= {"live": live, "meridian_home": f"{meridian}/accounts" if meridian else None,
+        context |= {"live": live, "meridian_home": "/meridian/accounts" if meridian else None,
                     "pending": store.counts(conn).get("pending", 0), "csrf_token": app.state.csrf_token}
         return templates.TemplateResponse(request, template, context, status_code=status_code)
 
@@ -95,6 +98,15 @@ def create_app(conn, client, live: bool, meridian_base: str | None, allowed_orig
     @app.get("/")
     def home():
         return RedirectResponse("/queue", status_code=303)
+
+    @app.get("/meridian/accounts")
+    @app.get("/meridian/accounts/{account_id}")
+    def to_meridian(account_id: str = ""):
+        """Open the CRM browser (live only). This redirect is the only place its token-bearing address appears."""
+        if not meridian:
+            raise HTTPException(404, "There is no CRM browser for the mock.")
+        path = f"/accounts/{quote(account_id, safe='')}" if account_id else "/accounts"
+        return RedirectResponse(f"{meridian}{path}", status_code=303)
 
     @app.get("/queue", response_class=HTMLResponse)
     def queue(request: Request, status: str = "pending", kind: str = "", q: str = "", last: str = "",

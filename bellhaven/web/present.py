@@ -317,9 +317,9 @@ def banner(p, outcome: str, names: dict) -> dict | None:
     if outcome == "rejected":
         return b | {"tone": "info", "title": "Rejected", "text": ""}
     if outcome == "error":
-        return b | {"tone": "error", "title": "Not saved",
-                    "text": "The database failed while handling this decision. The server output has the error; "
-                            "anything written to the CRM is in the change history."}
+        return b | {"tone": "error", "title": "Not saved", "account_id": linked_account(p),
+                    "text": "The database failed while handling this decision, so it may not be fully recorded. "
+                            "The server output has the error. Check the account in the CRM before trying again."}
     if outcome == "unrecorded":
         return b | {"tone": "error", "title": "Written, but not recorded",
                     "text": "The CRM write went through, but saving the decision failed. The API log and change "

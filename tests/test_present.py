@@ -210,4 +210,6 @@ def test_banners_need_the_matching_stored_status():
 def test_an_error_banner_shows_whatever_the_status():
     ps, names = queue()
     for status in ("pending", "applying"):
-        assert present.banner(ps["update"] | {"status": status}, "error", names)["title"] == "Not saved"
+        b = present.banner(ps["update"] | {"status": status}, "error", names)
+        assert (b["title"], b["account_id"]) == ("Not saved", "A1")
+        assert "change history" not in b["text"]  # failed attempts are only in the API log

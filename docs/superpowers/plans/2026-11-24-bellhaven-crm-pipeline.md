@@ -72,7 +72,7 @@ Each task was built from this plan, then reviewed twice: once against the spec, 
 1. Don't run the pipeline while you're approving.
 2. If an ownership change (CHOW) reports an error, press Retry on it before running the pipeline again.
 
-**Review app replaced (2026-11-24):** the Streamlit `review_app.py` from Task 12 was replaced by a Meridian-style FastAPI app: run `python -m bellhaven.web` and open http://localhost:8000. See `docs/superpowers/plans/2026-11-24-review-app-redesign.md`. Where Tasks 14 and 16 mention the app, they mean the new one.
+**Review app replaced (2026-11-24):** the Streamlit `review_app.py` from Task 12 was replaced by a Meridian-style FastAPI app: run `python -m bellhaven.web` and open http://localhost:8000. See `docs/superpowers/plans/2026-11-24-review-app-redesign.md`. Wherever this plan mentions `review_app.py`, Streamlit or the app's mock/live banner, read `bellhaven.web` and its **Mock CRM** / **LIVE SANDBOX** badge; Task 12's code is history. The suite now has 208 tests.
 
 ## Background (read this first)
 
@@ -2788,32 +2788,10 @@ Expected: `{"locations": 35, "accounts": 121, "proposals": 29, "new": 29, ...}`
 
 - [ ] **Step 3: Practise the demo.** Run `python -m bellhaven.web`, open http://localhost:8000, check the top bar's badge says **Mock CRM**, and walk through it as you would on camera: open the Tiffin CHOW, approve a rename, reject one, then check the change through the mock (`python -c "from bellhaven.crm import CrmClient; print(CrmClient().get_account('<id>'))"`).
 
-- [ ] **Step 4: Write `mock_crm/approve_all.py`** and approve everything that's left
-
-```python
-"""Rehearsal only: approve every pending proposal against the MOCK CRM. Refuses to run against the live sandbox."""
-from bellhaven import store
-from bellhaven.apply import apply_proposal
-from bellhaven.config import API_BASE, DB_PATH, USING_MOCK
-from bellhaven.crm import CrmClient
-
-
-def main() -> None:
-    if not USING_MOCK:
-        raise SystemExit("Refusing: BH_API_BASE is the live sandbox. This script is for the mock only.")
-    conn, crm = store.connect(DB_PATH, crm_base=API_BASE), CrmClient()
-    rows = store.list_proposals(conn, "pending")
-    for row in rows:
-        store.set_status(conn, row["key"], "applied", "rehearsal", apply_proposal(conn, crm, row))
-    print(f"Applied {len(rows)} proposals to the mock at {API_BASE}")
-
-
-if __name__ == "__main__":
-    main()
-```
+- [ ] **Step 4: Approve everything that's left** with `mock_crm/approve_all.py`. It's already in the repo: it goes through the same `review.approve` path as the Approve button, and refuses to run against the live sandbox.
 
 Run: `python -m mock_crm.approve_all`
-Expected: `Applied N proposals to the mock at http://localhost:8001/api/v1` (N is 29 minus what you decided in Step 3)
+Expected: `Applied N of N proposals to the mock at http://localhost:8001/api/v1` (N is 29 minus what you decided in Step 3). If any can't be applied, it lists them and exits non-zero.
 
 - [ ] **Step 5: Run the pipeline again**
 
@@ -2825,12 +2803,10 @@ Expected: `"new": 0`, and `"proposals"` equals the number you rejected in Step 3
 Run: `python -m bellhaven.audit --before data\snapshot\crm.json`
 Expected: `{"created": 6, "changed": 25}`, give or take what you rejected, then `OK`. The only acceptable `PROBLEM` lines are `still proposed` for proposals you rejected on purpose.
 
-- [ ] **Step 7: Clean up and commit**
+- [ ] **Step 7: Clean up**
 
 ```powershell
 Remove-Item data\test.db; Remove-Item Env:BH_API_BASE, Env:BH_DB_PATH
-git add mock_crm/approve_all.py
-git commit -m "test: rehearsal helper for the mock"
 ```
 
 Stop the mock with Ctrl+C.
@@ -2885,7 +2861,11 @@ Expected: `"new": 0, "already_known": 29`
   - Reject one proposal you genuinely disagree with, with a comment. If you agree with all of them, the most debatable are the `not_on_website` ones (decisions #1 and #2) and the Kettering duplicate survivor (a tie, broken by lowest account id).
   - Open the CRM browser and show the approved change there. Its address is `https://analyst-assessment-production.up.railway.app/crm/<your token>/accounts`, and each account is at `.../accounts/<account_id>`. It's read only and shows the same fields as the API: parent, status, care type, address, revenue and AR, CHOW Current Account, Duplicate Of, Note, Last Updated. A parent's page lists its child accounts. **The token is in that address:** keep the address bar out of the shared recording (full screen, or crop it), because anyone with the token can change your graded sandbox through the API.
 - [ ] **Step 3: Work through the rest of the queue.** Read every proposal's evidence before approving. A queue with unapproved proposals scores the same as doing nothing.
-- [ ] **Step 4: Check the **Failed** tab.** For a stale failure, re-run the pipeline and review again. For an API error, read the error saved on the proposal, fix the code, and approve again.
+- [ ] **Step 4: Check the Failed tab.** For a stale failure, re-run the pipeline and review again. For an API error, read the error saved on the proposal, fix the code, and approve again. If you reject one by mistake, put it back in the queue with the command below, using the key at the end of its page's address (`/proposals/<key>`):
+
+```powershell
+python -c "import sys; from bellhaven import store; from bellhaven.config import DB_PATH; c = store.connect(DB_PATH); n = c.execute('UPDATE proposals SET status=?, decided_at=NULL WHERE key=? AND status=?', ('pending', sys.argv[1], 'rejected')).rowcount; c.commit(); print(n, 'reopened')" <key>
+```
 - [ ] **Step 5: Run the pipeline again**
 
 Run: `python -m bellhaven.pipeline`
