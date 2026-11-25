@@ -83,7 +83,7 @@ def test_chow_logs_the_new_account_and_the_link():
 def test_a_proposal_cannot_be_applied_twice_at_once():
     crm, conn, row = setup([make_account(name="Old Name")], [make_location()])
     apply_proposal(conn, crm, row)  # status is now 'applying'; the app marks it applied afterwards
-    with pytest.raises(AlreadyHandled):
+    with pytest.raises(AlreadyHandled, match="applying"):
         apply_proposal(conn, crm, row)  # a second click
     assert [w[0] for w in crm.writes] == ["PATCH"]
 
@@ -168,3 +168,20 @@ def test_a_dropped_field_in_a_created_chow_account_is_reported():
     conn, row = setup_with(crm, [make_location()])
     result = apply_proposal(conn, crm, row)
     assert result["mismatches"]["new_account"]["parent_id"] == {"sent": BH, "returned": ""}
+
+
+def test_chow_is_refused_if_the_account_was_resolved_meanwhile():
+    crm, conn, row = setup([chow_account()], [make_location()])
+    crm.accounts["A1"]["duplicate_of_account"] = "A9"  # marked a duplicate in the CRM after the proposal was made
+    with pytest.raises(StaleProposal, match="duplicate"):
+        apply_proposal(conn, crm, row)
+    assert crm.writes == []
+
+
+def test_apply_uses_the_latest_stored_proposal_not_the_one_the_page_loaded():
+    crm, conn, row = setup([make_account(name="Old Name")], [make_location()])
+    crm.accounts["A1"]["note"] = "edited by a rep"  # the CRM changed after the page was loaded...
+    [p] = build_proposals([make_location()], list(crm.accounts.values()), [], "2026-11-26")
+    store.add_proposals(conn, store.start_run(conn), [p])  # ...and the next run refreshed the proposal
+    apply_proposal(conn, crm, row)  # the page still holds the old row
+    assert crm.accounts["A1"]["note"].startswith("edited by a rep | ")

@@ -38,8 +38,8 @@ def _call(conn, key: str, method: str, path: str, body: dict, send):
     """Run one API write and log it, failures included: a write that timed out may still have landed."""
     try:
         response = send()
-    except CrmError as e:
-        store.log_call(conn, key, method, path, body, {"error": str(e)})
+    except Exception as e:
+        store.log_call(conn, key, method, path, body, {"error": f"{type(e).__name__}: {e}"})
         raise
     return response, store.log_call(conn, key, method, path, body, response)
 
@@ -57,7 +57,7 @@ def _check_rules(kind: str, current: dict) -> None:
         raise StaleProposal({"billing": {
             "expected": "revenue and outstanding AR both above 0",
             "actual": f"revenue {current.get('lifetime_revenue')}, AR {current.get('outstanding_ar')}"}})
-    if kind in PATCH_KINDS and already_resolved(current):
+    if already_resolved(current):
         raise StaleProposal({"resolution": {
             "expected": "not a duplicate and no change of ownership",
             "actual": {f: current.get(f) for f in ("duplicate_of_account", "chow_current_account")}}})
@@ -110,7 +110,10 @@ def apply_proposal(conn, client, row) -> dict:
     if kind not in KINDS:
         raise ValueError(f"unknown proposal kind {kind!r}")
     if not store.claim(conn, key):
-        raise AlreadyHandled(f"'{row['title']}' isn't pending or failed any more")
+        status = (store.get(conn, key) or {"status": "missing"})["status"]
+        hint = ": wait for it to finish, or re-run the pipeline if it is stuck" if status == "applying" else ""
+        raise AlreadyHandled(f"'{row['title']}' is {status}, not pending or failed{hint}")
+    row = store.get(conn, key)  # the latest stored version: a pipeline run may have refreshed it since
     changes, before = json.loads(row["changes"]), json.loads(row["before"])
 
     if kind == "create":
