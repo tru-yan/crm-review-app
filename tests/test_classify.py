@@ -134,3 +134,10 @@ def test_unlinked_chow_account_is_not_proposed_as_a_duplicate():
     old = make_account(account_id="A1", parent_id=CEDAR, lifetime_revenue=84000, outstanding_ar=12400)
     new = make_account(account_id="NEW1", created_by_candidate=True)
     assert [p.kind for p in run([make_location()], [old, new])] == ["chow"]
+
+
+def test_duplicate_evidence_names_the_survivor():
+    accounts = [make_account(account_id="A1"),
+                make_account(account_id="A2", name="Harborview Shores of Testville", parent_id=HARBORVIEW)]
+    [dup] = run([make_location()], accounts)
+    assert dup.evidence["survivor"] == {"account_id": "A1", "name": "Bellhaven of Testville"}

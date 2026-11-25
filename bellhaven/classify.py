@@ -169,8 +169,10 @@ def _duplicate(loc: Location, m: Match, survivor: Match, why: str, today: str) -
         reasons.append(f"Care types differ ({a['care_type']} vs {s['care_type']}); it could be a separate building.")
     changes = {"duplicate_of_account": s["account_id"], "status": "Inactive",
                "note": _note(a["note"], f"Duplicate of {s['account_id']} ({s['name']}).", today, loc.url)}
+    evidence = _evidence(loc, m, a, reasons)
+    evidence["survivor"] = {"account_id": s["account_id"], "name": s["name"]}  # so the review app can name it
     return Proposal("duplicate", f"Duplicate: '{a['name']}' -> '{s['name']}'", a["account_id"], loc.slug, changes,
-                    {k: a.get(k) for k in changes}, _evidence(loc, m, a, reasons), confidence)
+                    {k: a.get(k) for k in changes}, evidence, confidence)
 
 
 def _create(loc: Location, bh: str, weak: list[Match], today: str) -> Proposal:
