@@ -1,204 +1,144 @@
-# Review app redesign: Meridian-style FastAPI app
+# Review app design: CRM Review App
 
-Status: approved 2026-11-24 and built; it replaced the Streamlit `review_app.py`. Reviews during the build tightened a few details (for example, Meridian links now go through the app so the token never appears in a page, and `R` asks first on live). `runbook.md` summarises the review app's safety behaviour as built, and the code is the reference.
+The review app is where a person approves or rejects each fix the pipeline proposes. Only approved fixes are written to the graded sandbox. It looks like the Meridian CRM (the sandbox's read-only front end), so reviewing about 29 proposals, recording the demo, and showing an approved change landing in the CRM are all quick and obvious.
 
-## Goal
-
-A review app that looks and feels like the Meridian CRM (the sandbox's read-only front end) and is intuitive for the reviewer. Reviewing about 29 proposals, recording the demo, and showing an approved change landing in the CRM should all be quick and obvious. Safety must be at least as strong as today's.
+This describes the app as it is now. The code in `crm_review_app/web/` is the reference.
 
 ## Decisions
 
 | Topic | Decision |
 |---|---|
 | Screens | Review queue, proposal detail, change history, pipeline runs |
-| Layout | A queue table, then one detail page per proposal (Meridian's list → detail pattern), with "Next pending" after each decision |
-| Live confirmation | Every approval on the live sandbox asks for confirmation. The mock never does. |
-| Technology | FastAPI and Jinja2 pages rendered on the server, Meridian's CSS, and a little vanilla JavaScript. No Node and no build step: FastAPI, Jinja2, uvicorn and python-multipart are already installed. |
-| Streamlit | Removed, together with its dependency, once the new app does everything the old one did, in the same change |
+| Layout | A queue table, then one page per proposal (Meridian's list → detail pattern), moving to the next pending proposal after each decision |
+| Confirmation | Every approval asks "Write this to the live sandbox?" first, and the server enforces it |
+| Technology | FastAPI with Jinja2 pages rendered on the server, Meridian's CSS, and a little vanilla JavaScript. No Node and no build step. It replaced an earlier Streamlit app. |
+| Where it runs | This machine only: `python -m crm_review_app.web` serves http://127.0.0.1:8000 |
 
 ## Look (Meridian style)
 
-- **Colours** (from Meridian's CSS):
-  - navy `#1b4f72` for the top bar, buttons and links
-  - page background `#eef1f4`, ink `#22303a`, lines `#d5dce2`, muted text `#64748b`
+- **Colours** (from Meridian's CSS): navy `#1b4f72` for the top bar, buttons and links; page background `#eef1f4`, ink `#22303a`, lines `#d5dce2`, muted text `#64748b`.
 - **Text and controls:** a system font stack at 14px. White table boxes with 6px corners. Uppercase 11px table headers and field labels.
-- **Status pills:** Active is green (`#e2f2e6` / `#1e6e46`), Inactive is red (`#f1e4e4` / `#9c3a3a`), and Needs Review or Pending is amber (`#f6ecd9` / `#8a5a10`).
-- **Kind pills:**
+- **Status pills** (a proposal's status): pending amber (`#f6ecd9` / `#8a5a10`), applying blue, applied green (`#e2f2e6` / `#1e6e46`), failed red (`#f1e4e4` / `#9c3a3a`), rejected and superseded grey.
+- **Type pills:**
 
-  | Kind | Pill label | Colours |
+  | Type | Pill label | Colours |
   |---|---|---|
   | update | Update | blue `#e6f1fb` / `#0c447c` |
   | chow | Ownership | purple `#eeedfe` / `#3c3489` |
   | create | New account | teal `#e1f5ee` / `#085041` |
   | duplicate | Duplicate | coral `#faece7` / `#712b13` |
-  | not_on_website | Not on site | gray `#f1efe8` / `#444441` |
+  | not_on_website | Not on site | grey `#f1efe8` / `#444441` |
 
-- **Environment badge,** at the right of the top bar: green "Mock CRM" (`#e2f2e6` / `#1e6e46`) or red "LIVE SANDBOX" (`#fcebeb` / `#791f1f`). It follows `config.USING_MOCK`.
+  An Administrator contact change is part of the account's **Update**, so each account has one review. An account whose fields all agree gets an update with only the contact change. Older proposals stored with the kind `administrator` (now superseded) also show as Update.
+
+- **LIVE SANDBOX badge** in red (`#fcebeb` / `#791f1f`) at the right of the top bar, on every page: every approved write lands in the graded copy.
 
 ## Screens
 
 ### Top bar (every page)
-- "Bellhaven review", then links to Queue (with the pending count), Change history and Pipeline runs, then the environment badge.
-- On live only, an "Open Meridian ↗" link to the CRM browser's accounts list.
+"CRM Review App", then Queue (with the pending count), Change history, Pipeline runs, "Open Meridian ↗" (the CRM browser's account list), and the LIVE SANDBOX badge.
 
 ### Review queue: `GET /queue`
-- **Header:** the title "Review queue", plus the last pipeline run's time and what it found (communities and accounts). If there has never been a run, say so.
-- **Status tabs with counts:** Pending, Applied, Rejected, Failed, Superseded, All. The default is Pending. Rows with status `applying` appear under All and are counted there.
-- **Filters:** a kind select and a text search on account name or city. Filters are query parameters: `status`, `kind`, `q`.
-- **Table columns:** Kind (pill), Account (name as a link to the detail page, with city and state underneath), Change (the one-line summary), Status (pill).
-- **Low-confidence rows** show a small "Review carefully" tag.
-- **Sort order:**
-  1. Kind: ownership, then create, duplicate, not_on_website, update. The irreversible kinds come first.
-  2. Account name, within each kind.
+- **Header:** "Review queue", with the last pipeline run's time and what it found (communities, CRM accounts, proposals), why it failed, or "Running or interrupted". Before any run: "No pipeline run yet."
+- **Status tabs with counts:** Pending (the default), Applied, Rejected, Failed, Superseded, All. Proposals being applied appear under All.
+- **Filters** (query parameters): a type select (`kind`, "All types") and a search on account name or city (`q`).
+- **Columns:** Type (pill), Account (name linking to its page, with city, state and account id underneath, and a "Review carefully" tag for low confidence), Change (a one-line summary), Lifetime revenue and Outstanding AR (the CRM account's, right-aligned; AR in red when above zero; "—" for a new account, which has no CRM record yet), Status (pill). Clicking anywhere on a row opens it.
+- **Order** (`sort`, chosen by clicking any column header; clicking the sorted column again reverses it, with `order=asc` or `desc`; the arrow shows the direction, and the tabs and filters keep both):
+  - **Outstanding AR** (the default): highest first, then lifetime revenue, so the proposals with money at stake come first.
+  - **Lifetime revenue:** highest first, then outstanding AR.
+  - **Type:** the kinds that add an account first (ownership, new account), then duplicate, not on site, update.
+  - **Account** and **Change:** A to Z, by the account's name or by the one-line summary.
+  - **Status:** what still needs a decision first: pending, applying, failed, applied, rejected, superseded.
+  - Ties fall back to the type order, then the account name. New accounts have no billing history, so they come last in the money sorts, in either direction. Unreadable amounts count as money involved: highest of all.
+  - A proposal's "n of N pending" and "Next pending" follow the default order.
 - **One-line summaries:**
 
-  | Kind | Summary |
+  | Type | Summary |
   |---|---|
-  | update | The changed fields, using the labels from "Field labels" below, for example "Name → Bellhaven of Chagrin Falls" or "Zip 45626 → 45662". The parent is shown by name, as "Parent → Bellhaven Senior Living". More than two fields: the first two, then "+N more". |
+  | update | The changes, for example "Name → Bellhaven of Chagrin Falls" or "Zip 45626 → 45662" (short fields and the phone show their old value too). The parent is shown by name, as "Parent → Bellhaven Senior Living", and the contact change as "Administrator {old} → {new}", or "Add administrator {new}" when the account has none. After two, "+N more"; the phone is listed last, so a name, parent or administrator change is never hidden behind it. The note is never shown or counted. |
   | chow | "New Bellhaven account; old one kept for billing" |
   | create | "Create under Bellhaven" |
-  | duplicate | "Duplicate of {survivor name}" |
+  | duplicate | "Duplicate of {survivor name}", plus the survivor's id when the two copies have the same name |
   | not_on_website | "Status → Needs Review" |
 
-- **Empty state:** "No pending proposals. Run the pipeline to check for changes."
+- **Empty states:** "No pending proposals. Run the pipeline to check for changes.", "No {status} proposals yet.", or "Nothing matches these filters."
 
-### Proposal detail: `GET /proposals/{key}`
-- **Breadcrumb and position:** "Queue / {kind}", plus "n of N pending" when the proposal is pending.
-- **Heading line:** the account name (or the new account's name for create and CHOW), the kind pill, the status pill, and on live a "View in Meridian ↗" link to `{SITE_BASE}/crm/{token}/accounts/{account_id}`. For create and an applied CHOW, the link goes to the created account.
-- **"Why" box:** `evidence.reasons` as plain sentences. Low confidence adds "Review carefully" with the reason.
-- **Billing SOP box** (amber, like the brief's), for chow, or for an update that changes `parent_id`: "Lifetime revenue $X, outstanding AR $Y: keep the old account and use a change of ownership", or "...: re-parenting allowed".
-- **"Now → After" table:** only the fields that change.
-  - The current value is struck through and the new one shown in green.
-  - Empty values show as "empty".
-  - For create and CHOW, the table lists the new account's fields (with "new" as the current value), and for CHOW also the old account's single link field.
-  - Notes are shown in full.
-  - `parent_id` is shown by parent name.
-- **Website vs CRM side by side:** two Meridian-style field grids, with fields that differ highlighted amber. Website fields: name, street, city/state/zip, phone, administrator, care offerings. CRM fields: name, parent, street, city/state/zip, phone, care type, status, revenue, AR. Either side shows "Not on the website" or "No CRM account" when absent.
-- **Match signals:** "Match {score}" followed by one chip per signal, for example "street +50" or "administrator +25". For a create, the weak candidates are listed instead.
-- **Action box** (pending or failed proposals only):
-  - an optional reviewer comment, then Approve (primary) and Reject (secondary)
-  - shortcut hints: A approve, R reject, N next pending, Q queue
-- **Failed proposals** show "Last attempt failed at {time}: {reason}" above the action box.
-- **Applying proposals** show the stuck-apply explanation: wait, or re-run the pipeline 10 or more minutes later.
-- **Decided proposals** show "{status} at {time} · {comment}", plus a change-log table for that proposal (account, action, field, before → after, when).
+### Proposal page: `GET /proposals/{key}`
+- **Breadcrumb:** "Queue / {type}", "n of N pending" when it's pending, and a "Next pending →" link.
+- **Heading:** the account name (the new account's name for a create or CHOW), the type and status pills, and "View in Meridian ↗", with the proposal's title and account id underneath. For a create, the link appears once the account exists; for an applied CHOW, it goes to the new account.
+- **Reason:** the reasons, as plain sentences. Low confidence adds "Review carefully".
+- **Billing SOP box** (pale yellow), for a CHOW or an update that changes the parent: "Lifetime revenue $X, outstanding AR $Y: keep the old account and use a change of ownership", or "…: re-parenting allowed".
+- **Now → After:** only the fields that change. The old value is struck through, the new one is green, and an empty value reads "empty". A create or CHOW lists the new account's fields (marked "new"). An update's contact change adds a row for the Administrator contact, now → the new one, and one for "{old name}'s contact: active → inactive", after the account's fields and before the note. On an update, the CRM grid adds the account's Administrator contact next to the website's administrator. A CHOW groups its rows under "New account" and "Old account {id}", the old account's only row being its link field. The parent shows by name, and duplicate and CHOW links as "Name (id)".
+- **Website vs CRM when proposed:** two field grids, with fields that disagree highlighted, and outstanding AR in red when above zero. The website side links to the community's page. A missing side reads "Not on the website" or "No CRM account".
+- **How it matched:** "Matched on: {rule}" (same address, near address or same people) and one chip per piece of evidence that agrees (street, administrator, phone, name, zip, city). A create lists its possible matches instead ("Possible matches, not used"), each with the rule that made it possible.
+- **Actions** (pending or failed proposals): an optional reviewer comment ("Add comment..."), then Approve (Retry after a failure) and Reject.
+- **Failed:** "Last attempt failed at {time} · {reason}". **Applying:** how to tell whether it's still being written, and that a pipeline run 10 or more minutes later reopens it if the change didn't land.
+- **Decided:** "{Status} at {time} · {comment}", any fields the CRM stored differently, and the change log for this proposal (account, action, field, before → after, when).
 
-### Live confirmation
-- On live, Approve opens a confirmation. It's a native `<dialog>` when JavaScript is on, or a server-rendered confirmation page when it's off. It shows:
-  - the title "Write this to the live sandbox?" and the note "This is the graded CRM. It has no delete."
-  - the exact change: the account name and id, then each field's now → after (the same rows as the Now → After table)
-  - for create and CHOW, also: "Creates 1 account that can't be deleted."
-  - Cancel, and a red "Write to live CRM" button, which submits the form with `confirmed=yes`
-- **The server enforces it.** On live, `POST /proposals/{key}/approve` without `confirmed=yes` returns the confirmation page (HTTP 200) and writes nothing. On the mock, `confirmed` is ignored.
+### Confirmation before a write
+- Approve opens a dialog (or, with JavaScript off, the server's own confirmation page) titled "Write this to the live sandbox?", noting "This is the graded CRM. It has no delete." It lists the account and the exact Now → After rows, and for a create or CHOW, "Creates 1 account that can't be deleted." (for an update with a contact change, "Adds 1 contact that can't be deleted.") Cancel, or a red "Write to live CRM" button.
+- **The server enforces it:** `POST /proposals/{key}/approve` without `confirmed=yes` returns the confirmation page for a pending or failed proposal, and writes nothing. A proposal that's already decided or being applied gets the "Already handled" banner instead.
 
 ### After a decision
-- The response is a `303` redirect to the next pending proposal (in queue order) with `?last={key}`, or to `/queue?last={key}` when none are left.
-- The page reads the last proposal's result from the database and shows one banner:
-  - **Green "Written":** a one-line summary, plus "The CRM stored exactly what was sent" when there were no mismatches, or the list of mismatched fields if there were. On live, "View in Meridian ↗".
-  - **Green "Already written":** "This change was already in the CRM (an earlier response was lost); it's now recorded."
-  - **Amber "Not written":** the record changed since the proposal was made. The `StaleProposal` text names the field, and it suggests "Re-run the pipeline."
-  - **Red "Failed":** the error text, and for a CHOW that failed after its create, "Retry it now, before the next pipeline run" with a Retry button that re-posts approve.
-  - **Gray "Rejected":** the proposal title.
-  - **Amber "Already handled":** the proposal's current status.
+- The response is a 303 redirect to the next pending proposal in queue order, or to the queue when none are left, carrying `?last={key}&outcome={outcome}`.
+- That page shows one banner, read from the stored proposal. Written, Already written, Not written, Failed and Rejected show only if the proposal's status still matches (so an old link never announces a write); the others always show:
+
+  | Banner | When |
+  |---|---|
+  | Written (green) | Applied: the one-line summary, then "The CRM stored exactly what was sent" or the fields stored differently, and "View in Meridian ↗" |
+  | Already written (green) | The change was already in the CRM (an earlier response was lost); it's now recorded |
+  | Not written (amber) | The record changed since the proposal was made; names the field, and says to re-run the pipeline |
+  | Failed (red) | The error, with a Retry button |
+  | Rejected (grey) | The proposal's title |
+  | Already handled (amber) | It was decided already, or another click is applying it |
+  | Written, but not recorded (red) | The CRM write went through, but saving the decision failed |
+  | Not saved (red) | The database failed while handling the decision |
 
 ### Change history: `GET /history`
-- Newest first: when, account (a link to the proposal, plus "↗" to Meridian on live), action (create or update), field, before → after, and the reviewer's comment.
-- **Filter:** `q` matches the account name or id.
-- **Data:** it reads `store.change_history`. Account names come from the proposal (the `crm.name` in its evidence, or the new account's `name` for create and CHOW), and fall back to the account id when no name is known.
+Every field written through the API, newest first: when, account (linking to its proposal, with "↗" to Meridian and the id underneath), action (create or update), field, before → after, and the reviewer's comment. `q` filters by account name or id. Names come from the stored proposals, falling back to the id.
 
 ### Pipeline runs: `GET /runs`
-- Newest first: started, result (OK when `finished_at` is set; "Failed: {error}" when the stats hold an error; "Running or interrupted" otherwise), communities, accounts, contacts, proposals, and new / already known / superseded.
+Newest first: started, result (OK in green; "Failed: {error}" in red; "Running or interrupted" in amber), communities, accounts, contacts, proposals, and new / already known / superseded.
+
+### Errors
+An unknown proposal shows "Proposal not found" (404). A refused request (403), an unknown page (404) or a wrong method (405) shows "That didn't go through" with the reason and a link back to the queue.
+
+### CRM browser links: `GET /meridian/accounts[/{account_id}]`
+Every "Meridian ↗" link points here, and the app answers with a 303 redirect to the CRM browser. The CRM browser's address contains the API token, so the token never appears in a page, where hovering a link would show it on screen.
 
 ## Architecture
 
-New package `bellhaven/web/`:
+Package `crm_review_app/web/`:
 
 | File | Responsibility |
 |---|---|
-| `review.py` | `approve(conn, client, key, comment, confirmed: bool, live: bool) -> Outcome` and `reject(conn, key, comment) -> Outcome`. They map every `apply_proposal` exception to an outcome (`applied`, `already_applied`, `stale`, `failed`, `already_handled`, `rejected`, `needs_confirmation`) and set the proposal status exactly as `review_app.decide` does today. `mock_crm/approve_all.py` uses it too. |
-| `present.py` | Pure view-model functions over store rows: `summary(row)`, `change_rows(row)` (Now → After), `side_by_side(row)` (website vs CRM with differences flagged), `signals(row)`, `kind_label(kind)`, `queue_order(rows)`, `field_label(field)`. They make no database or network calls. |
-| `app.py` | `create_app(conn, client, live: bool, meridian_base: str or None, allowed_origins=None) -> FastAPI`, holding the routes above, the CSRF check, the static files and the templates. `build()` reads config (`DB_PATH`, `API_BASE`, `USING_MOCK`, the token) for uvicorn. |
-| `__main__.py` | `python -m bellhaven.web` runs uvicorn on `127.0.0.1:8000`. |
-| `templates/` | `base.html` (top bar, badge, banner), `queue.html`, `proposal.html`, `confirm.html`, `history.html`, `runs.html` |
-| `static/` | `meridian.css` (Meridian's rules plus the additions above), `review.js` (keyboard shortcuts and the confirm dialog, as a progressive enhancement) |
+| `review.py` | `approve(conn, client, key, comment=None, *, confirmed=False)` and `reject(conn, key, comment=None)`, returning an `Outcome`: `applied`, `already_applied`, `stale`, `failed`, `already_handled`, `rejected`, `needs_confirmation`, `unrecorded` or `error`. `approve` calls `apply.apply_proposal`, stores the result on the proposal, logs errors, and never raises. |
+| `present.py` | Pure functions from stored proposals to what the pages show: `summary`, `change_rows`, `side_by_side`, `signals`, `sop`, `queue_order`, `position`, `next_pending`, `banner`, `account_names`, `run_view` and the labels. No database, network or HTML. |
+| `app.py` | `create_app(conn, client, meridian_base)` builds the FastAPI app: the routes above, the CSRF and origin checks, host and framing protection, templates and static files. `build()` makes it from `.env` (database, CRM client, CRM browser address with the token). |
+| `__main__.py` | `python -m crm_review_app.web` runs uvicorn on 127.0.0.1:8000 |
+| `templates/` | `base.html` (top bar, badge, banner), `queue.html`, `proposal.html`, `_confirm_body.html` (shared by the dialog and the confirmation page), `confirm.html`, `_values.html` (how old, new and empty values look), `history.html`, `runs.html`, `error.html` |
+| `static/` | `meridian.css` (Meridian's rules plus the app's), `review.js` (the confirmation dialog, one submit per page, a reload for pages restored from the browser's cache, clickable queue rows). Every page works without it. |
 
-**Field labels for display** (`present.field_label`):
+**Field labels** (`present.field_label`): `name` Name, `parent_id` Parent, `billing_street` Street, `billing_city` City, `billing_state` State, `billing_zip` Zip, `care_type` Care type, `status` Status, `phone` Phone, `note` Note, `duplicate_of_account` Duplicate of, `chow_current_account` CHOW current account.
 
-| Field | Label |
-|---|---|
-| `name` | Name |
-| `parent_id` | Parent |
-| `billing_street` | Street |
-| `billing_city` | City |
-| `billing_state` | State |
-| `billing_zip` | Zip |
-| `care_type` | Care type |
-| `status` | Status |
-| `phone` | Phone |
-| `note` | Note |
-| `duplicate_of_account` | Duplicate of |
-| `chow_current_account` | CHOW current account |
-
-Other changes:
-- `store.fail_run(conn, run_id, error)` records `{"error": ...}` in `runs.stats` and leaves `finished_at` NULL.
-- `pipeline.run` calls it in an `except` block and re-raises.
-- `store.latest_run(conn)` returns the most recent run for the queue header.
-- No schema changes.
+**What it relies on elsewhere:** `store.latest_run` and `store.list_runs` for the run pages, `store.fail_run` (the pipeline records why a run failed), and the survivor's name in a duplicate's evidence (from `classify.py`).
 
 ## Safety
 
-- **Writes only happen on POST** (`/approve`, `/reject`). GET handlers never call `review.approve` or `review.reject`, and a test enforces this.
-- **CSRF:**
-  - A random token is generated when the app starts. It goes into a hidden field in every form and must match on every POST, otherwise the request gets a 403.
-  - POSTs whose `Origin` (or `Referer`) header is present and doesn't match one of the app's own origins also get a 403. Those origins are passed to `create_app(allowed_origins=…)` and default to `http://127.0.0.1:8000` and `http://localhost:8000`. A POST with neither header is allowed, because the CSRF token still applies.
-- **Local only:** uvicorn binds to `127.0.0.1`.
-- **Live confirmation is enforced on the server,** as described above.
-- **Existing guards apply unchanged:**
-  - the `apply.claim` double-click guard
-  - the freshness and rule re-checks
-  - create-once, and the latest-run check for creates
-  - the `store.connect(crm_base=…)` tie between a database and one CRM
-- **The token appears only in rendered links on live pages.** It's never written to disk by the app, and isn't used at all on the mock.
-- **Escaping:** Jinja2 autoescape stays on for all templates, since proposal text comes from the website and the CRM.
+- **Writes only on POST** (`/approve`, `/reject`). GET pages only read.
+- **CSRF:** a random token, made when the app starts, goes into a hidden field in every form and must match on every POST, or the request gets a 403. A POST whose `Origin` (or `Referer`) names a site other than `http://127.0.0.1:8000` or `http://localhost:8000` also gets a 403.
+- **This machine only:** uvicorn binds to 127.0.0.1, and the app answers only to the host names 127.0.0.1 and localhost (so a page fetched under another name, as in DNS rebinding, is refused). Pages can't be framed by another site (`X-Frame-Options: DENY`, `frame-ancestors 'none'`).
+- **Confirmation is enforced by the server,** as above. After the dialog submits, the confirmation value is cleared, so the browser's Back button can't restore it.
+- **The token** only appears in the `/meridian` redirect, never in a page.
+- **Escaping:** Jinja2 autoescape is on for every template, because proposal text comes from the website and the CRM.
+- **One request at a time** uses the shared SQLite connection (a lock).
+- **The write guards in `apply.py` apply unchanged:** the atomic claim (a double click can't write twice), the freshness and rule re-checks, create-once, and the latest-run check for creates.
 
 ## Error handling
 
-- `review.approve` never lets an exception escape to the route. Unexpected errors become `failed`, with `type(e).__name__` and the message stored in the proposal's `result`, as today.
-- An unknown proposal key returns 404 with a link back to the queue.
-- A database tied to a different CRM (the `RuntimeError` from `store.connect`) stops the app at startup with that message.
-
-## Testing
-
-| File | Covers |
-|---|---|
-| `tests/test_review_service.py` | Each outcome: applied, already applied, stale, failed (CrmError and an unexpected exception), already handled, rejected, a rejected proposal that is no longer pending, and needs-confirmation on live without `confirmed` (with no writes) |
-| `tests/test_present.py` | Summaries for every kind (including "+N more"), change rows for update, create, chow, duplicate and not_on_website, parent shown by name, side-by-side difference flags, queue ordering |
-| `tests/test_web.py` | FastAPI `TestClient` with `FakeCrm`, an in-memory store and fixture proposals |
-
-`tests/test_web.py` checks that:
-- every GET page returns 200, an unknown key returns 404, and no GET writes
-- approve on the mock writes and redirects (303) to the next pending proposal, with the banner on the next page
-- approve on live without `confirmed` returns the confirmation page and doesn't write; with `confirmed=yes` it writes
-- a missing or wrong CSRF token gets 403, and a foreign `Origin` gets 403
-- reject is guarded
-- the environment badge text matches mock and live
-- the Meridian link appears only on live, and never contains the token on mock pages
-
-Also:
-- `tests/test_pipeline.py`: a failed run records its error.
-- The existing suite (147 tests) stays green, including the end-to-end test. `approve_all` keeps its refusal on live.
-- **Manual:** a controller click-through in a browser against the mock (queue, filters, detail, approve, reject, keyboard shortcuts, history, runs), and the confirmation page with JavaScript off.
-
-## Switching over
-
-- Same branch, as one change: add `bellhaven/web`, then delete `review_app.py` and remove `streamlit` from `requirements.txt` once the app does everything the old one did.
-- Update `README.md`: start the app with `python -m bellhaven.web`, at http://localhost:8000.
-- Update the plan's live-phase steps: the app's address, and the confirmation step.
+- `review.approve` and `review.reject` never let an exception reach the route. An API or unexpected error becomes `failed`, with `Type: message` stored on the proposal; a database error becomes `error`. Both are logged to the server output.
+- A missing API token stops the app at startup with a message saying how to set it.
 
 ## Out of scope
 
-- Bulk approve.
-- Editing a proposal's values in the app.
-- Multiple users or sign-in.
-- Dark mode.
-- Deployment beyond the local machine.
-- Linking a CHOW to an existing Bellhaven copy, which is deferred as before.
+Bulk approve; editing a proposal's values in the app; multiple users or sign-in; dark mode; running anywhere but this machine; linking a CHOW to an existing Bellhaven copy instead of creating a new account.

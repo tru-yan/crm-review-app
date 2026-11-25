@@ -1,6 +1,6 @@
 # Bellhaven CRM pipeline: every day at 06:00 server time.
-# Edit /opt/bellhaven to your checkout; the API token comes from the .env file there.
+# Edit /opt/crm to your checkout; the API token comes from the .env file there.
 # It only scrapes, reads the CRM and stores proposals. Nothing is written to the CRM until a reviewer approves it.
 # Safe to re-run: rejected proposals are never proposed again; an approved one comes back only if the CRM changed back.
 # A failed run exits non-zero and leaves its traceback in logs/pipeline.log.
-0 6 * * * cd /opt/bellhaven && mkdir -p logs && .venv/bin/python -m bellhaven.pipeline >> logs/pipeline.log 2>&1
+0 6 * * * cd /opt/crm && mkdir -p logs && .venv/bin/python -m crm_review_app.pipeline >> logs/pipeline.log 2>&1
