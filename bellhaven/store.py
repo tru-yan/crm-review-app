@@ -5,7 +5,7 @@ of every change made through the CRM API. Every write is one transaction: it com
 """
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 SCHEMA = """
@@ -70,9 +70,15 @@ ORDER BY c.id;
 UNDECIDED = ("pending", "failed")
 
 
+_last = datetime.min.replace(tzinfo=timezone.utc)
+
+
 def _now() -> str:
-    # microseconds, so "decided before this run started" can be told apart from "decided during it"
-    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
+    # microseconds, strictly increasing within the process (the Windows clock ticks ~1 ms, so two calls could tie),
+    # so "decided before this run started" can be told apart from "decided during it"
+    global _last
+    _last = max(datetime.now(timezone.utc), _last + timedelta(microseconds=1))
+    return _last.isoformat(timespec="microseconds")
 
 
 def connect(path, crm_base: str | None = None) -> sqlite3.Connection:
