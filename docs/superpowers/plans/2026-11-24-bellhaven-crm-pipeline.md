@@ -12,7 +12,7 @@
 
 ## Changes made during the build (2026-11-24)
 
-Each task was built from this plan, then reviewed twice: once against the spec, once for code quality. Review fixes and one final whole-branch review changed the code below. **Where the code on branch `bellhaven-pipeline` differs from a code block in this plan, the code is authoritative.** The suite has 146 tests.
+Each task was built from this plan, then reviewed twice: once against the spec, once for code quality. Review fixes and one final whole-branch review changed the code below. **Where the code on branch `bellhaven-pipeline` differs from a code block in this plan, the code is authoritative.** The suite has 147 tests.
 
 - **Task 1, normalize:**
   - Phone extensions are ignored.
@@ -48,6 +48,7 @@ Each task was built from this plan, then reviewed twice: once against the spec, 
   - Create-once uses our own API log first, then a strict name + street + zip search.
   - "Already applied" detection for a lost response.
   - Failures are logged, and a CHOW that fails after its create says "Retry it now, before the next pipeline run".
+  - A create, or a CHOW's new account, only POSTs if the latest finished pipeline run still proposes it. An account that already landed is still recovered.
 - **Task 9, pipeline:** the stats include `contacts`. There is a test that a failed read changes nothing.
 - **Task 10, mock and snapshot:**
   - The mock rejects wrong types, blank names, empty PATCHes, self-references, unknown filters and malformed JSON.
