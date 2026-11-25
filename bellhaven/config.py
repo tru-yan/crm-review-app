@@ -1,6 +1,7 @@
 """Settings from environment variables, falling back to a .env file in the repo root."""
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import truststore
 
@@ -13,11 +14,16 @@ ROOT = Path(__file__).resolve().parent.parent
 def _load_env_file(path: Path) -> None:
     if not path.exists():
         return
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
         line = line.strip()
+        if line.startswith("export "):
+            line = line[len("export "):].strip()
         if line and not line.startswith("#") and "=" in line:
             key, value = line.split("=", 1)
-            os.environ.setdefault(key.strip(), value.strip())
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                value = value[1:-1]
+            os.environ.setdefault(key.strip(), value)
 
 
 _load_env_file(ROOT / ".env")
@@ -26,7 +32,15 @@ SITE_BASE = os.environ.get("BH_SITE_BASE", "https://analyst-assessment-productio
 LIVE_API_BASE = f"{SITE_BASE}/api/v1"
 # Set BH_API_BASE to the mock CRM (Task 10) to test without touching the graded sandbox.
 API_BASE = os.environ.get("BH_API_BASE", LIVE_API_BASE)
-USING_MOCK = API_BASE != LIVE_API_BASE
+GRADED_HOST = "analyst-assessment-production.up.railway.app"
+
+
+def is_graded_crm(api_base: str) -> bool:
+    """True when api_base points at the graded sandbox, however the URL is written."""
+    return (urlsplit(api_base).hostname or "") == GRADED_HOST
+
+
+USING_MOCK = not is_graded_crm(API_BASE)
 DB_PATH = Path(os.environ.get("BH_DB_PATH", ROOT / "data" / "state.db"))
 BELLHAVEN_PARENT_NAME = "Bellhaven Senior Living (Parent Account)"
 # Decision #1: status for a Bellhaven account that is gone from the website and has no other copy.

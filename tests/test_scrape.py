@@ -76,3 +76,25 @@ def test_scrape_follows_pager_and_finds_homepage_only_communities():
 def test_scrape_fails_when_directory_count_is_wrong():
     with pytest.raises(ScrapeError, match="says 5"):
         scrape(FakeSession(pages(total=5)), base=BASE, delay=0)
+
+
+def test_scrape_fails_when_the_count_is_missing():
+    p = pages()
+    for path in ("/communities", "/communities?page=2"):
+        p[path] = p[path].replace("3 communities listed", "")
+    with pytest.raises(ScrapeError, match="communities listed"):
+        scrape(FakeSession(p), base=BASE, delay=0)
+
+
+def test_scrape_fails_on_an_empty_directory():
+    p = pages(total=0)
+    p["/communities"] = listing([], None, 0)
+    with pytest.raises(ScrapeError):
+        scrape(FakeSession(p), base=BASE, delay=0)
+
+
+def test_unexpected_detail_page_names_the_slug():
+    p = pages()
+    p["/communities/b"] = "<div class='wrap'><h1>B</h1></div>"
+    with pytest.raises(ScrapeError, match="/communities/b"):
+        scrape(FakeSession(p), base=BASE, delay=0)

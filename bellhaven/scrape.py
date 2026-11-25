@@ -69,11 +69,19 @@ def scrape(session=None, base: str = SITE_BASE, delay: float = 0.3) -> list[Loca
         slugs, path, count = parse_listing(get(path))
         claimed = claimed if claimed is not None else count
         directory += [x for x in slugs if x not in directory]
-    if claimed is not None and len(directory) != claimed:
+    if claimed is None:
+        raise ScrapeError("directory page no longer says 'N communities listed'; the site layout may have changed")
+    if not directory or len(directory) != claimed:
         raise ScrapeError(f"directory says {claimed} communities but {len(directory)} were found")
 
     extra = []
     for page in EXTRA_LINK_PAGES:
         extra += [x for x in parse_community_links(get(page)) if x not in directory and x not in extra]
 
-    return [parse_detail(get(slug), slug, base, slug in directory) for slug in directory + extra]
+    locations = []
+    for slug in directory + extra:
+        try:
+            locations.append(parse_detail(get(slug), slug, base, slug in directory))
+        except (KeyError, AttributeError, IndexError) as e:
+            raise ScrapeError(f"{slug}: unexpected page layout ({e!r})") from e
+    return locations
